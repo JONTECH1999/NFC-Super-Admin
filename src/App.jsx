@@ -1478,23 +1478,46 @@ function App() {
             </button>
           </header>
 
-          <section className="profile-panel" aria-label="Business owner profile">
-            <div className="profile-halo" aria-hidden="true" />
-            {profile.profile_image_url ? (
-              <img
-                className="profile-photo"
-                src={profile.profile_image_url}
-                alt={`Portrait of ${profile.name}`}
-                onError={(event) => {
-                  event.currentTarget.hidden = true;
-                }}
-              />
-            ) : (
-              <div className="profile-photo-placeholder" aria-hidden="true">
-                <i className="fa-solid fa-user" />
-              </div>
-            )}
-          </section>
+          <div className="profile-column">
+            <section className="profile-panel" aria-label="Business owner profile">
+              <div className="profile-halo" aria-hidden="true" />
+              {profile.profile_image_url ? (
+                <img
+                  className="profile-photo"
+                  src={profile.profile_image_url}
+                  alt={`Portrait of ${profile.name}`}
+                  onError={(event) => {
+                    event.currentTarget.hidden = true;
+                  }}
+                />
+              ) : (
+                <div className="profile-photo-placeholder" aria-hidden="true">
+                  <i className="fa-solid fa-user" />
+                </div>
+              )}
+            </section>
+
+            <nav className="bottom-nav" aria-label="Card actions">
+              <button
+                className="bottom-nav-icon"
+                type="button"
+                aria-label="Share this business card"
+                onClick={shareCard}
+              >
+                <i className="fa-solid fa-arrow-up-from-bracket" aria-hidden="true" />
+              </button>
+              <a
+                className="contact-button"
+                href="/shop"
+                aria-label="Visit the shop"
+              >
+                <span>Visit Shop</span>
+                <span className="contact-button-icon">
+                  <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
+                </span>
+              </a>
+            </nav>
+          </div>
 
           <section className="details-panel" aria-label="Business information">
             <section className="profile-summary-card" aria-labelledby="person-name">
@@ -1670,27 +1693,6 @@ function App() {
               </section>
             )}
           </section>
-
-          <nav className="bottom-nav" aria-label="Card actions">
-            <button
-              className="bottom-nav-icon"
-              type="button"
-              aria-label="Share this business card"
-              onClick={shareCard}
-            >
-              <i className="fa-solid fa-arrow-up-from-bracket" aria-hidden="true" />
-            </button>
-            <a
-              className="contact-button"
-              href="/shop"
-              aria-label="Visit the shop"
-            >
-              <span>Visit Shop</span>
-              <span className="contact-button-icon">
-                <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
-              </span>
-            </a>
-          </nav>
 
         </article>
       </main>
