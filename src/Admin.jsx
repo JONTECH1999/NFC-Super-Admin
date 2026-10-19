@@ -1,7 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase } from './lib/supabase';
+import { supabase, supabaseUrl } from './lib/supabase';
 import { applyFavicon, applySiteTitle } from './lib/siteSettings';
 import './admin.css';
+
+const CACHE_SCOPE = (() => {
+  try {
+    if (supabaseUrl) {
+      const match = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/);
+      if (match && match[1]) return match[1];
+    }
+  } catch (e) {}
+  return "default";
+})();
+
+const PROFILE_CACHE_KEY = `nfc_card_profile_cache_${CACHE_SCOPE}`;
+const PRODUCTS_CACHE_KEY = `nfc_card_products_cache_${CACHE_SCOPE}`;
 
 /* ============================================================
    Toast Component
@@ -137,6 +150,14 @@ function ProfileTab({ showToast }) {
         applyFavicon(data.site_icon_url);
         try { localStorage.setItem('nfc_card_site_icon', data.site_icon_url); } catch (e) {}
       }
+      if (data?.custom_qr_url) {
+        try { localStorage.setItem('nfc_card_custom_qr_url', data.custom_qr_url); } catch (e) {}
+      } else {
+        const cachedQr = localStorage.getItem('nfc_card_custom_qr_url');
+        if (cachedQr) {
+          setForm((prev) => ({ ...prev, custom_qr_url: cachedQr }));
+        }
+      }
     } catch (err) {
       showToast('Failed to load profile: ' + err.message, 'error');
     } finally {
@@ -226,7 +247,7 @@ function ProfileTab({ showToast }) {
 
       let { error } = await supabase.from('profiles').update(updateData).eq('id', profile.id);
 
-      // If custom_links or address_link column does not exist yet in DB schema cache, retry without them
+      // If custom_links, address_link, or custom_qr_url column does not exist yet in DB schema cache, retry without them
       if (error && error.message) {
         let retryData = { ...updateData };
         let shouldRetry = false;
@@ -236,6 +257,14 @@ function ProfileTab({ showToast }) {
         }
         if (error.message.includes('address_link')) {
           delete retryData.address_link;
+          shouldRetry = true;
+        }
+        if (error.message.includes('custom_qr_url')) {
+          delete retryData.custom_qr_url;
+          shouldRetry = true;
+        }
+        if (error.message.includes('showcase_caption')) {
+          delete retryData.showcase_caption;
           shouldRetry = true;
         }
         if (shouldRetry) {
@@ -248,7 +277,13 @@ function ProfileTab({ showToast }) {
       setProfile({ ...form, custom_links: customLinks });
       setDirty(false);
       try {
+        localStorage.setItem(`nfc_card_custom_links_${CACHE_SCOPE}`, JSON.stringify(customLinks));
         localStorage.setItem('nfc_card_custom_links', JSON.stringify(customLinks));
+        localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ ...form, custom_links: customLinks }));
+        localStorage.setItem('nfc_card_profile_cache', JSON.stringify({ ...form, custom_links: customLinks }));
+        if (form.custom_qr_url !== undefined) {
+          localStorage.setItem('nfc_card_custom_qr_url', form.custom_qr_url || '');
+        }
         if (form.theme_mode) {
           localStorage.setItem('nfc_card_theme', form.theme_mode);
           localStorage.removeItem('nfc_card_user_theme');
@@ -284,13 +319,14 @@ function ProfileTab({ showToast }) {
     { key: 'business', label: 'Business', type: 'text' },
     { key: 'role', label: 'Role', type: 'text' },
     { key: 'eyebrow', label: 'Eyebrow Text', type: 'text' },
+    { key: 'showcase_caption', label: 'Showcase Image Caption (e.g. Upholstery Repair Shop)', type: 'text' },
     { key: 'phone', label: 'Phone', type: 'text' },
     { key: 'phone_link', label: 'Phone Link', type: 'text' },
     { key: 'email', label: 'Email', type: 'email' },
     { key: 'address', label: 'Address', type: 'text' },
     { key: 'address_link', label: 'Address Link (e.g. Google Maps URL)', type: 'url' },
     { key: 'facebook', label: 'Facebook URL', type: 'url' },
-    { key: 'youtube', label: 'YouTube URL', type: 'url' },
+    { key: 'youtube', label: 'YouTube URL (Optional - leave blank to hide)', type: 'url' },
   ];
 
   return (
@@ -330,11 +366,26 @@ function ProfileTab({ showToast }) {
           </div>
         </div>
 
+        <div className="admin-form-group" style={{ marginTop: 12 }}>
+          <label className="admin-label" htmlFor="pf-custom_qr_url">Permanent QR Code Link (Optional)</label>
+          <input
+            id="pf-custom_qr_url"
+            className="admin-input"
+            type="url"
+            value={form.custom_qr_url || ''}
+            onChange={(e) => handleChange('custom_qr_url', e.target.value)}
+            placeholder="Default: auto-uses your domain (e.g. https://calling-card.web.app)"
+          />
+          <small style={{ color: 'var(--admin-text-muted)', fontSize: '0.74rem', marginTop: 4, display: 'block' }}>
+            Leave blank to automatically generate the QR code using your current domain, or specify a permanent redirect link.
+          </small>
+        </div>
+
         {/* Permanent Theme Selection */}
         <div className="admin-form-group" style={{ marginTop: 12 }}>
           <label className="admin-label">Permanent Default Theme Color</label>
           <p className="admin-card-subtitle" style={{ margin: '0 0 12px' }}>
-            Choose your default theme. Green, Blue, or Red acts as dark mode and toggles to White. Warm Beige or Pure White acts as light mode and toggles to Pitch Black.
+            Choose the card's default appearance. Light themes switch to Pitch Black when a visitor taps the theme control.
           </p>
           <div className="admin-theme-picker">
             {/* Dark */}
@@ -424,6 +475,24 @@ function ProfileTab({ showToast }) {
               <div className="admin-theme-option-info">
                 <strong>Pure White</strong>
                 <span>Crisp black & pure white</span>
+              </div>
+            </label>
+
+            {/* Soft Lavender */}
+            <label className={`admin-theme-option ${form.theme_mode === 'lavender' ? 'selected' : ''}`}>
+              <input
+                type="radio"
+                name="theme_mode"
+                value="lavender"
+                checked={form.theme_mode === 'lavender'}
+                onChange={() => handleChange('theme_mode', 'lavender')}
+              />
+              <div className="admin-theme-swatch lavender-swatch">
+                <span className="admin-color-dot" style={{ background: '#8b72cc' }} />
+              </div>
+              <div className="admin-theme-option-info">
+                <strong>Soft Lavender</strong>
+                <span>Lavender backdrop &amp; clean white cards</span>
               </div>
             </label>
 
@@ -635,7 +704,7 @@ function ProfileTab({ showToast }) {
                       <option value="fa-brands fa-tiktok">🎵 TikTok</option>
                       <option value="fa-brands fa-facebook-f">📘 Facebook Page / Group</option>
                       <option value="fa-brands fa-instagram">📸 Instagram</option>
-                      <option value="fa-brands fa-youtube">🔴 YouTube (Secondary)</option>
+                      <option value="fa-brands fa-youtube">🔴 YouTube</option>
                       <option value="fa-brands fa-whatsapp">💬 WhatsApp</option>
                       <option value="fa-brands fa-telegram">✈️ Telegram</option>
                       <option value="fa-brands fa-viber">🟣 Viber</option>
@@ -710,7 +779,12 @@ function ProductsTab({ showToast }) {
     try {
       const { data, error } = await supabase.from('products').select('*').order('sort_order');
       if (error) throw error;
-      setProducts(data || []);
+      const list = data || [];
+      setProducts(list);
+      try {
+        localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(list));
+        localStorage.setItem('nfc_card_products_cache', JSON.stringify(list));
+      } catch (e) {}
     } catch (err) {
       showToast('Failed to load products: ' + err.message, 'error');
     } finally {

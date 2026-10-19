@@ -40,7 +40,7 @@
       (function () {
         try {
           var saved = localStorage.getItem("nfc_card_theme");
-          var validThemes = ["dark", "light", "red", "blue", "white", "emerald"];
+          var validThemes = ["dark", "light", "red", "blue", "white", "emerald", "lavender"];
           var theme = validThemes.indexOf(saved) !== -1 ? saved : "dark";
           try {
             var userOverride = localStorage.getItem("nfc_card_user_theme");
@@ -55,6 +55,7 @@
             var colors = {
               light: "#f4f0e8",
               white: "#ffffff",
+              lavender: "#f2effa",
               red: "#120406",
               blue: "#040a18",
               emerald: "#03140e",

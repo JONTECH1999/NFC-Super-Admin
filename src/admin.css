@@ -530,6 +530,11 @@
   border-color: rgba(0, 0, 0, 0.25);
 }
 
+.lavender-swatch {
+  background: linear-gradient(135deg, #f5f2fc 0%, #c8b9e8 100%);
+  border-color: rgba(139, 114, 204, 0.45);
+}
+
 .emerald-swatch {
   background: linear-gradient(135deg, #09261e 0%, #114c3d 100%);
   border-color: rgba(16, 185, 129, 0.45);

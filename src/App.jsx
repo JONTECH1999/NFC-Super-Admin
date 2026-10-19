@@ -1,80 +1,49 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { supabase } from "./lib/supabase";
+import { supabase, supabaseUrl } from "./lib/supabase";
 import { applyFavicon, applySiteTitle } from "./lib/siteSettings";
 
 /* ── Fallback data (used until Supabase loads) ── */
 const fallbackProfile = {
-  name: "Aljon Alonzo",
-  business: "Calling Card",
-  role: "Website & Digital Business Associate",
-  phone: "0951 364 4817",
-  phoneLink: "+639513644817",
-  email: "aljonrisasalonzo@gmail.com",
-  address:
-    "Brgy. 185, North B12, L9 Manggahan Road, Barangay 185, Caloocan, Metro Manila",
-  facebook: "https://www.facebook.com/aljon11onsi/",
-  youtube: "https://www.youtube.com/@aljonalonzo2195",
-  description:
-    "Calling Card helps individuals and small businesses build their online presence with professional websites, digital business cards, and practical digital support.",
-  eyebrow: "Your digital growth partner",
-  profile_image_url: "/aljon-profile.jfif",
+  name: "",
+  business: "",
+  role: "",
+  phone: "",
+  phoneLink: "",
+  email: "",
+  address: "",
+  facebook: "",
+  youtube: "",
+  description: "",
+  eyebrow: "",
+  profile_image_url: "",
   theme_mode: (typeof window !== "undefined" && localStorage.getItem("nfc_card_theme")) || "dark",
 };
 
-const fallbackProducts = [
-  {
-    name: "Website Design & Development",
-    image_url:
-      "https://images.unsplash.com/photo-1558655146-9f40138edfeb?auto=format&fit=crop&w=720&q=85",
-    alt: "Brand identity colors and design materials",
-  },
-  {
-    name: "Digital Business Cards",
-    image_url:
-      "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&w=720&q=85",
-    alt: "Social media campaign displayed on a phone",
-  },
-  {
-    name: "Small Business Websites",
-    image_url:
-      "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=720&q=85",
-    alt: "Team planning a marketing strategy together",
-  },
-  {
-    name: "Online Store Setup",
-    image_url:
-      "https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=720&q=85",
-    alt: "Website analytics and design on a laptop",
-  },
-  {
-    name: "Website Maintenance & Support",
-    image_url:
-      "https://images.unsplash.com/photo-1542038784456-1ea8e935640e?auto=format&fit=crop&w=720&q=85",
-    alt: "Camera prepared for professional content creation",
-  },
-];
+const fallbackProducts = [];
 
 /** Normalise a Supabase profiles row to the shape our UI expects. */
 function normalizeProfile(row) {
   if (!row) return fallbackProfile;
   return {
-    name: row.name || fallbackProfile.name,
-    business: row.business || fallbackProfile.business,
-    role: row.role || fallbackProfile.role,
-    phone: row.phone || fallbackProfile.phone,
-    phoneLink: row.phone_link || fallbackProfile.phoneLink,
-    email: row.email || fallbackProfile.email,
-    address: row.address || fallbackProfile.address,
+    name: row.name !== undefined && row.name !== null ? row.name : fallbackProfile.name,
+    business: row.business !== undefined && row.business !== null ? row.business : fallbackProfile.business,
+    role: row.role !== undefined && row.role !== null ? row.role : fallbackProfile.role,
+    phone: row.phone !== undefined && row.phone !== null ? row.phone : fallbackProfile.phone,
+    phoneLink: row.phone_link !== undefined && row.phone_link !== null ? row.phone_link : fallbackProfile.phoneLink,
+    email: row.email !== undefined && row.email !== null ? row.email : fallbackProfile.email,
+    address: row.address !== undefined && row.address !== null ? row.address : fallbackProfile.address,
     address_link: row.address_link || row.addressLink || "",
-    facebook: row.facebook || fallbackProfile.facebook,
-    youtube: row.youtube || fallbackProfile.youtube,
-    description: row.description || fallbackProfile.description,
-    eyebrow: row.eyebrow || fallbackProfile.eyebrow,
+    facebook: row.facebook !== undefined && row.facebook !== null ? row.facebook : fallbackProfile.facebook,
+    youtube: row.youtube !== undefined && row.youtube !== null ? row.youtube : "",
+    description: row.description !== undefined && row.description !== null ? row.description : fallbackProfile.description,
+    eyebrow: row.eyebrow !== undefined && row.eyebrow !== null ? row.eyebrow : fallbackProfile.eyebrow,
+    showcase_caption: row.showcase_caption || '',
     profile_image_url: row.profile_image_url || fallbackProfile.profile_image_url,
     site_title: row.site_title || '',
     site_icon_url: row.site_icon_url || '',
     theme_mode: row.theme_mode || 'dark',
+    custom_qr_url: row.custom_qr_url || '',
     custom_links: (() => {
       try {
         if (row.custom_links) {
@@ -618,7 +587,7 @@ function ProductShop({ profile, products: initialProducts }) {
 function ActionLink({ action }) {
   return (
     <a
-      className="action"
+      className={`action${action.social ? ` social social-${action.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : ""}`}
       href={action.href}
       aria-label={action.ariaLabel}
       {...(action.external
@@ -771,49 +740,65 @@ function resolveCustomIcon(icon, label = "", url = "") {
 /** Build the action buttons array from a profile object. */
 function buildActions(profile) {
   const mapUrl = resolveMapUrl(profile);
-  const baseActions = [
-    {
+  const baseActions = [];
+  const phone = profile.phoneLink || profile.phone;
+
+  if (phone) {
+    baseActions.push({
       label: "Call",
       icon: "fa-solid fa-phone",
-      href: `tel:${profile.phoneLink}`,
-      ariaLabel: `Call ${profile.name} at ${profile.phone}`,
-    },
-    {
+      href: `tel:${profile.phoneLink || profile.phone}`,
+      ariaLabel: `Call ${profile.name} at ${profile.phone || profile.phoneLink}`,
+    });
+    baseActions.push({
+      label: "Text",
+      icon: "fa-regular fa-comment-dots",
+      href: `sms:${profile.phoneLink || profile.phone}`,
+      ariaLabel: `Text ${profile.name}`,
+    });
+  }
+
+  if (profile.email) {
+    baseActions.push({
       label: "Email",
       icon: "fa-regular fa-envelope",
       href: `mailto:${profile.email}`,
       ariaLabel: `Email ${profile.name}`,
-    },
-    {
-      label: "Text",
-      icon: "fa-regular fa-comment-dots",
-      href: `sms:${profile.phoneLink}`,
-      ariaLabel: `Text ${profile.name}`,
-    },
-    {
+    });
+  }
+
+  if (profile.address || profile.address_link) {
+    baseActions.push({
       label: "Location",
       icon: "fa-solid fa-location-dot",
       href: mapUrl,
       ariaLabel: `Find ${profile.business} at ${profile.address}`,
       external: true,
-    },
-    {
+    });
+  }
+
+  if (profile.facebook && profile.facebook.trim()) {
+    baseActions.push({
       label: "Facebook",
       icon: "fa-brands fa-facebook-f",
       href: profile.facebook,
       ariaLabel: `${profile.business} on Facebook`,
       external: true,
       social: true,
-    },
-    {
+    });
+  }
+
+  // Optional YouTube action button: only shown when profile.youtube has a valid URL
+  if (profile.youtube && profile.youtube.trim()) {
+    baseActions.push({
       label: "YouTube",
       icon: "fa-brands fa-youtube",
-      href: profile.youtube,
+      href: profile.youtube.trim().startsWith("http") ? profile.youtube.trim() : `https://${profile.youtube.trim()}`,
       ariaLabel: `${profile.business} on YouTube`,
       external: true,
       social: true,
-    },
-  ];
+    });
+  }
 
   // Map any custom links (TikTok, another FB page, Instagram, LinkedIn, etc.)
   const customLinksList = Array.isArray(profile.custom_links)
@@ -832,10 +817,43 @@ function buildActions(profile) {
   return [...baseActions, ...customLinksList];
 }
 
+const CACHE_SCOPE = (() => {
+  try {
+    if (supabaseUrl) {
+      const match = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/);
+      if (match && match[1]) return match[1];
+    }
+  } catch (e) {}
+  return "default";
+})();
+
+const PROFILE_CACHE_KEY = `nfc_card_profile_cache_${CACHE_SCOPE}`;
+const PRODUCTS_CACHE_KEY = `nfc_card_products_cache_${CACHE_SCOPE}`;
+
+function getInitialProfile() {
+  try {
+    const cached = localStorage.getItem(PROFILE_CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {}
+  return fallbackProfile;
+}
+
+function getInitialProducts() {
+  try {
+    const cached = localStorage.getItem(PRODUCTS_CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (e) {}
+  return fallbackProducts;
+}
+
 function App() {
   /* ── Supabase data ── */
-  const [profile, setProfile] = useState(fallbackProfile);
-  const [allProducts, setAllProducts] = useState(fallbackProducts);
+  const [profile, setProfile] = useState(getInitialProfile);
+  const [allProducts, setAllProducts] = useState(getInitialProducts);
   const [dataReady, setDataReady] = useState(false);
 
   /* Featured products for the main card, all products for the shop */
@@ -856,6 +874,10 @@ function App() {
         if (profileRes.data) {
           const norm = normalizeProfile(profileRes.data);
           setProfile(norm);
+          try {
+            localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(norm));
+            localStorage.setItem("nfc_card_profile_cache", JSON.stringify(norm));
+          } catch (e) {}
           if (norm.theme_mode) {
             try {
               localStorage.setItem("nfc_card_theme", norm.theme_mode);
@@ -873,14 +895,21 @@ function App() {
           }
           if (Array.isArray(norm.custom_links)) {
             try {
+              localStorage.setItem(`nfc_card_custom_links_${CACHE_SCOPE}`, JSON.stringify(norm.custom_links));
               localStorage.setItem("nfc_card_custom_links", JSON.stringify(norm.custom_links));
             } catch (e) {}
           }
         }
-        if (productsRes.data) setAllProducts(normalizeProducts(productsRes.data));
+        if (productsRes.data) {
+          const normProds = normalizeProducts(productsRes.data);
+          setAllProducts(normProds);
+          try {
+            localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(normProds));
+            localStorage.setItem("nfc_card_products_cache", JSON.stringify(normProds));
+          } catch (e) {}
+        }
       } catch (err) {
         console.error("Failed to load data from Supabase:", err);
-        // Fallback data is already set
       } finally {
         if (!cancelled) setDataReady(true);
       }
@@ -908,7 +937,7 @@ function App() {
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
-  // Active theme is driven by profile's permanent theme_mode (with paired dark/light toggle)
+  // Active theme follows the saved profile theme, with a paired light/dark toggle.
   const baseTheme = profile.theme_mode || "dark";
   const [themeOverride, setThemeOverride] = useState(() => {
     try {
@@ -923,7 +952,7 @@ function App() {
   });
 
   const activeTheme = themeOverride || baseTheme;
-  const isLightMode = activeTheme === "light" || activeTheme === "white";
+  const isLightMode = ["light", "white", "lavender"].includes(activeTheme);
 
   // When profile.theme_mode changes from admin, clear user override if admin changed the base
   useEffect(() => {
@@ -1077,6 +1106,7 @@ function App() {
       const colors = {
         light: "#f4f0e8",
         white: "#ffffff",
+        lavender: "#f2effa",
         red: "#120406",
         blue: "#040a18",
         emerald: "#03140e",
@@ -1091,9 +1121,9 @@ function App() {
     if (baseTheme === "light") {
       // Warm Beige is light mode; dark mode is Pitch Black
       nextTheme = activeTheme === "light" ? "dark" : "light";
-    } else if (baseTheme === "white") {
-      // Pure White is light mode; dark mode is Pitch Black
-      nextTheme = activeTheme === "white" ? "dark" : "white";
+    } else if (baseTheme === "white" || baseTheme === "lavender") {
+      // Pure White and Soft Lavender are light modes; dark mode is Pitch Black
+      nextTheme = activeTheme === baseTheme ? "dark" : baseTheme;
     } else {
       // Green (emerald), Blue (blue), Red (red), Pitch Black (dark):
       // Dark mode is the base theme; Light mode is Pure White
@@ -1146,11 +1176,14 @@ function App() {
   }, [profile.business]);
 
   useEffect(() => {
+    // Only begin exiting the intro screen once the latest data is ready from Supabase
+    if (!dataReady) return undefined;
+
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     ).matches;
-    const revealDelay = reducedMotion ? 80 : 1550;
-    const exitDelay = reducedMotion ? 0 : 650;
+    const revealDelay = reducedMotion ? 80 : 1050;
+    const exitDelay = reducedMotion ? 0 : 550;
     const revealTimer = window.setTimeout(
       () => setIntroPhase("exiting"),
       revealDelay,
@@ -1166,7 +1199,7 @@ function App() {
       window.clearTimeout(toastTimer.current);
       window.clearTimeout(rippleTimer.current);
     };
-  }, []);
+  }, [dataReady]);
 
   useEffect(() => {
     if (qrOpen) closeButton.current?.focus();
@@ -1254,6 +1287,41 @@ function App() {
     }
   }
 
+  function downloadContact() {
+    const escapeVCardValue = (value) =>
+      String(value || "")
+        .replace(/\\/g, "\\\\")
+        .replace(/\r?\n/g, "\\n")
+        .replace(/([,;])/g, "\\$1");
+    const phone = profile.phoneLink || profile.phone;
+    const fields = [
+      "BEGIN:VCARD",
+      "VERSION:3.0",
+      `FN:${escapeVCardValue(profile.name)}`,
+      profile.business && `ORG:${escapeVCardValue(profile.business)}`,
+      profile.role && `TITLE:${escapeVCardValue(profile.role)}`,
+      phone && `TEL;TYPE=CELL:${escapeVCardValue(phone)}`,
+      profile.email && `EMAIL:${escapeVCardValue(profile.email)}`,
+      profile.address && `ADR;TYPE=WORK:;;${escapeVCardValue(profile.address)};;;;`,
+      `URL:${escapeVCardValue(window.location.href)}`,
+      "END:VCARD",
+    ].filter(Boolean);
+    const blob = new Blob([fields.join("\r\n")], { type: "text/vcard;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const filename = (profile.name || profile.business || "business-contact")
+      .trim()
+      .replace(/[^a-z0-9]+/gi, "_")
+      .replace(/^_|_$/g, "");
+    link.href = url;
+    link.download = `${filename || "business-contact"}.vcf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("Contact saved to your device.");
+  }
+
   async function installCard() {
     const isInstalled =
       window.matchMedia("(display-mode: standalone)").matches ||
@@ -1312,23 +1380,49 @@ function App() {
           aria-label="Preparing your introduction"
         >
           <div className="intro-content">
-            <div className="intro-emblem">
-              <span className="intro-orbit intro-orbit-one" />
-              <span className="intro-orbit intro-orbit-two" />
-              <span className="intro-emblem-core">
-                <img src={profile.profile_image_url} alt="" />
-              </span>
+            <div className="intro-card">
+              <span className="intro-card-glow" aria-hidden="true" />
+              <div className="intro-emblem">
+                <span className="intro-orbit intro-orbit-one" />
+                <span className="intro-orbit intro-orbit-two" />
+                <span className="intro-emblem-core">
+                  {profile.profile_image_url ? (
+                    <img src={profile.profile_image_url} alt="" />
+                  ) : (
+                    <i className="fa-solid fa-user-tie" aria-hidden="true" />
+                  )}
+                </span>
+                <span className="intro-contact-icon intro-contact-phone" aria-hidden="true">
+                  <i className="fa-solid fa-phone" />
+                </span>
+                <span className="intro-contact-icon intro-contact-message" aria-hidden="true">
+                  <i className="fa-solid fa-comment-dots" />
+                </span>
+                <span className="intro-contact-icon intro-contact-email" aria-hidden="true">
+                  <i className="fa-solid fa-envelope" />
+                </span>
+                <span className="intro-contact-icon intro-contact-location" aria-hidden="true">
+                  <i className="fa-solid fa-location-dot" />
+                </span>
+              </div>
+              <div className="intro-copy">
+                <span className="intro-business">
+                  <i className="fa-solid fa-id-card" aria-hidden="true" />
+                  {profile.business}
+                </span>
+                {profile.eyebrow && <p className="intro-eyebrow">{profile.eyebrow}</p>}
+                <h1 className="intro-brand">{profile.name}</h1>
+                {profile.role && <p className="intro-role">{profile.role}</p>}
+              </div>
+              <div className="intro-loader" role="presentation">
+                <span />
+              </div>
+              <p className="intro-caption">
+                <span className="intro-loading-dot" aria-hidden="true" />
+                Preparing your introduction
+              </p>
+              <span className="intro-card-shine" aria-hidden="true" />
             </div>
-            <p className="intro-eyebrow">{profile.eyebrow}</p>
-            <h1 className="intro-brand">{profile.name}</h1>
-            <p className="intro-role">{profile.role}</p>
-            <div className="intro-loader" role="presentation">
-              <span />
-            </div>
-            <p className="intro-caption">
-              <span className="intro-loading-dot" aria-hidden="true" />
-              Preparing your digital card
-            </p>
           </div>
         </div>
       )}
@@ -1358,7 +1452,7 @@ function App() {
               />
             </>
           )}
-          <header className="app-status-bar" aria-label="Device status">
+          <header className="app-status-bar" aria-label="Card controls">
             <span className="status-brand">{profile.business}</span>
             <button
               className="status-theme-button"
@@ -1371,7 +1465,7 @@ function App() {
               }
               title={
                 isLightMode
-                  ? (baseTheme === "light" || baseTheme === "white" ? "Switch to Pitch Black" : `Switch to ${baseTheme} mode`)
+                  ? (["light", "white", "lavender"].includes(baseTheme) ? "Switch to Pitch Black" : `Switch to ${baseTheme} mode`)
                   : "Switch to light mode"
               }
             >
@@ -1386,7 +1480,7 @@ function App() {
 
           <section className="profile-panel" aria-label="Business owner profile">
             <div className="profile-halo" aria-hidden="true" />
-            <div className="profile-avatar-frame">
+            {profile.profile_image_url ? (
               <img
                 className="profile-photo"
                 src={profile.profile_image_url}
@@ -1395,126 +1489,186 @@ function App() {
                   event.currentTarget.hidden = true;
                 }}
               />
-            </div>
-            <div className="profile-copy">
-              <p className="eyebrow">{profile.eyebrow}</p>
-              <h1 id="person-name">{profile.name}</h1>
-              <span className="profile-divider" aria-hidden="true" />
-              <p className="role">{profile.role}</p>
-              <div className="company-name">
-                <i className="fa-solid fa-arrow-trend-up" aria-hidden="true" />
-                <span>{profile.business}</span>
+            ) : (
+              <div className="profile-photo-placeholder" aria-hidden="true">
+                <i className="fa-solid fa-user" />
               </div>
-            </div>
+            )}
           </section>
 
-          <section className="details-panel" aria-labelledby="about-heading">
-            <section className="connect-section" aria-labelledby="about-heading">
-              <p className="section-kicker">Digital business card</p>
-              <h2 id="about-heading">Connect with {profile.name}</h2>
-              <nav className="action-grid" aria-label="Contact and profile actions">
-                {actions.map((action) => (
+          <section className="details-panel" aria-label="Business information">
+            <section className="profile-summary-card" aria-labelledby="person-name">
+              <div className="profile-copy">
+                {profile.eyebrow && <p className="eyebrow">{profile.eyebrow}</p>}
+                <h1 id="person-name">{profile.name}</h1>
+                {profile.role && <p className="role">{profile.role}</p>}
+                {profile.business && (
+                  <div className="company-name">
+                    <i className="fa-solid fa-id-card" aria-hidden="true" />
+                    <span>{profile.business}</span>
+                  </div>
+                )}
+              </div>
+
+              <nav className="profile-quick-actions" aria-label="Quick contact actions">
+                {actions.filter((action) => ["Call", "Text", "Email"].includes(action.label)).map((action) => (
                   <ActionLink action={action} key={action.label} />
                 ))}
                 <button
                   className="action"
+                  type="button"
+                  aria-label="Share this business card"
+                  onClick={shareCard}
+                >
+                  <i className="fa-solid fa-arrow-up-from-bracket" aria-hidden="true" />
+                  <span>Share</span>
+                </button>
+              </nav>
+
+              <button
+                className="save-contact-button"
+                type="button"
+                onClick={downloadContact}
+              >
+                <i className="fa-solid fa-id-card" aria-hidden="true" />
+                <span>Save contact</span>
+              </button>
+
+              <div className="profile-utility-actions">
+                <button
+                  className="profile-utility-button"
                   ref={installButton}
                   type="button"
                   aria-label={`Install ${profile.business}`}
                   onClick={installCard}
                 >
                   <i className="fa-solid fa-download" aria-hidden="true" />
-                  <span>Install</span>
+                  <span>Install card</span>
                 </button>
                 <button
-                  className="action"
+                  className="profile-utility-button"
                   ref={qrButton}
                   type="button"
                   aria-label="Show QR code for this business card"
                   onClick={() => setQrOpen(true)}
                 >
                   <i className="fa-solid fa-qrcode" aria-hidden="true" />
-                  <span>QR Code</span>
+                  <span>QR code</span>
                 </button>
-              </nav>
-            </section>
-
-            <section className="showcase-frame" aria-labelledby="showcase-heading">
-              <div className="showcase-image">
-                <img
-                  src={featuredProducts[0]?.image_url}
-                  alt={featuredProducts[0]?.alt}
-                  loading="lazy"
-                />
-                <span>Website &amp; digital services</span>
-              </div>
-              <h2 id="showcase-heading">About {profile.name.split(" ")[0]}</h2>
-              <p className="description">
-                {profile.description}
-              </p>
-              <div className="contact-list" aria-label="Direct contact details">
-                <a href={`tel:${profile.phoneLink}`}>
-                  <i className="fa-solid fa-phone" aria-hidden="true" />
-                  <span><small>Direct call</small>{profile.phone}</span>
-                  <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
-                </a>
-                <a href={`mailto:${profile.email}`}>
-                  <i className="fa-regular fa-envelope" aria-hidden="true" />
-                  <span><small>Email</small>{profile.email}</span>
-                  <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
-                </a>
-                <a
-                  href={resolveMapUrl(profile)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <i className="fa-solid fa-location-dot" aria-hidden="true" />
-                  <span><small>Business location</small>{profile.address}</span>
-                  <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
-                </a>
               </div>
             </section>
 
-            <section className="product-section" aria-labelledby="products-heading">
-              <div className="product-heading">
-                <div>
-                  <p className="product-kicker">What we do</p>
-                  <h2 id="products-heading">Featured services</h2>
+            {actions.some((action) => action.social && action.href && action.href !== "#") && (
+              <section className="social-section" aria-labelledby="social-heading">
+                <div className="content-card-heading">
+                  <div>
+                    <p className="section-kicker">Find us online</p>
+                    <h2 id="social-heading">Connect with us</h2>
+                  </div>
+                  <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
                 </div>
-                <span className="sample-label">SAMPLE</span>
-              </div>
-              <div className="products-grid">
-                {featuredProducts.map((product) => (
-                  <article
-                    className="product-card"
-                    key={product.id || product.name}
-                    onClick={() => openProjectModal(product)}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`View full details of ${product.name}`}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        openProjectModal(product);
-                      }
-                    }}
-                  >
-                    <div className="product-card-info">
-                      <h3>{product.name}</h3>
-                      {product.price && (
-                        <span className="product-card-badge">{product.price}</span>
-                      )}
-                    </div>
+                <nav className="social-grid" aria-label="Social media links">
+                  {actions
+                    .filter((action) => action.social && action.href && action.href !== "#")
+                    .map((action) => (
+                      <ActionLink action={action} key={action.label} />
+                    ))}
+                </nav>
+              </section>
+            )}
+
+            {(profile.description || profile.phone || profile.email || profile.address) && (
+              <section className="showcase-frame" aria-labelledby="showcase-heading">
+                {featuredProducts[0]?.image_url && (
+                  <div className="showcase-image">
                     <img
-                      className="product-image"
-                      src={product.image_url}
-                      alt={product.alt || product.name}
+                      src={featuredProducts[0].image_url}
+                      alt={featuredProducts[0]?.alt || "Featured work"}
                       loading="lazy"
                     />
-                  </article>
-                ))}
-              </div>
-            </section>
+                    <span>
+                      {profile.showcase_caption && profile.showcase_caption.trim()
+                        ? profile.showcase_caption.trim()
+                        : (profile.business || "Featured work")}
+                    </span>
+                  </div>
+                )}
+                <h2 id="showcase-heading">{profile.business ? `About ${profile.business}` : "About us"}</h2>
+                {profile.description && <p className="description">{profile.description}</p>}
+                <div className="contact-list" aria-label="Direct contact details">
+                  {profile.phone && (
+                    <a href={`tel:${profile.phoneLink || profile.phone}`}>
+                      <i className="fa-solid fa-phone" aria-hidden="true" />
+                      <span><small>Direct call</small>{profile.phone}</span>
+                      <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
+                    </a>
+                  )}
+                  {profile.email && (
+                    <a href={`mailto:${profile.email}`}>
+                      <i className="fa-regular fa-envelope" aria-hidden="true" />
+                      <span><small>Email</small>{profile.email}</span>
+                      <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
+                    </a>
+                  )}
+                  {(profile.address || profile.address_link) && (
+                    <a
+                      href={resolveMapUrl(profile)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <i className="fa-solid fa-location-dot" aria-hidden="true" />
+                      <span><small>Business location</small>{profile.address || "View location"}</span>
+                      <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
+                    </a>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {featuredProducts.length > 0 && (
+              <section className="product-section" aria-labelledby="products-heading">
+                <div className="product-heading">
+                  <div>
+                    <p className="product-kicker">A selection of our work</p>
+                    <h2 id="products-heading">Featured services</h2>
+                  </div>
+                  <span className="product-heading-icon" aria-hidden="true">
+                    <i className="fa-solid fa-sparkles" />
+                  </span>
+                </div>
+                <div className="products-grid">
+                  {featuredProducts.map((product) => (
+                    <article
+                      className="product-card"
+                      key={product.id || product.name}
+                      onClick={() => openProjectModal(product)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`View full details of ${product.name}`}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openProjectModal(product);
+                        }
+                      }}
+                    >
+                      <div className="product-card-info">
+                        <h3>{product.name}</h3>
+                        {product.price && (
+                          <span className="product-card-badge">{product.price}</span>
+                        )}
+                      </div>
+                      <img
+                        className="product-image"
+                        src={product.image_url}
+                        alt={product.alt || product.name}
+                        loading="lazy"
+                      />
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
           </section>
 
           <nav className="bottom-nav" aria-label="Card actions">
@@ -1538,28 +1692,6 @@ function App() {
             </a>
           </nav>
 
-          {/* Simple Client Inquiries Tagline */}
-          <footer className="card-creator-tagline">
-            <p>
-              Want a digital business card like this?{" "}
-              <a
-                href={`mailto:${profile.email || "aljonrisasalonzo@gmail.com"}?subject=${encodeURIComponent("Digital Card Website Inquiry")}&body=${encodeURIComponent("Hi! I would like to create a digital business card like calling-card.web.app for my business.")}`}
-                className="card-creator-link"
-              >
-                <span>Get your own card</span>
-                <i className="fa-solid fa-arrow-right" aria-hidden="true" />
-              </a>
-            </p>
-            <a
-              href="https://calling-card.web.app"
-              className="card-creator-domain"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Visit Calling Card website"
-            >
-              calling-card.web.app
-            </a>
-          </footer>
         </article>
       </main>
 
@@ -1659,15 +1791,107 @@ function App() {
               <i className="fa-solid fa-xmark" aria-hidden="true" />
             </button>
             <h2 id="qr-title">Scan to connect</h2>
-            <p>Point your camera at the code to open {profile.business}&apos;s digital card.</p>
-            <div className="qr-frame">
+            <p>Point your phone camera to instantly open {profile.business}&apos;s digital card.</p>
+
+            {/* Permanent QR Code Frame */}
+            <div className="qr-frame" id="permanent-qr-container">
               <QRCodeSVG
-                value={window.location.href}
-                size={148}
-                fgColor={activeTheme === "white" ? "#000000" : activeTheme === "light" ? "#4a3319" : "#ffffff"}
+                id="permanent-card-qr"
+                value={
+                  profile.custom_qr_url && profile.custom_qr_url.trim()
+                    ? profile.custom_qr_url.trim()
+                    : window.location.origin
+                }
+                size={180}
+                fgColor="#000000"
+                bgColor="#ffffff"
                 level="H"
                 includeMargin
               />
+            </div>
+
+            <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+              <div style={{
+                fontSize: '0.74rem',
+                color: 'var(--screen-muted)',
+                background: 'rgba(255, 255, 255, 0.05)',
+                padding: '6px 12px',
+                borderRadius: 8,
+                wordBreak: 'break-all',
+                fontFamily: 'monospace'
+              }}>
+                {profile.custom_qr_url && profile.custom_qr_url.trim()
+                  ? profile.custom_qr_url.trim()
+                  : window.location.origin}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'var(--screen-control)',
+                    border: '1px solid var(--screen-control-border)',
+                    color: 'var(--screen-text)',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6
+                  }}
+                  onClick={() => {
+                    const svg = document.getElementById('permanent-card-qr');
+                    if (!svg) return;
+                    const svgData = new XMLSerializer().serializeToString(svg);
+                    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+                    const svgUrl = URL.createObjectURL(svgBlob);
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = svgUrl;
+                    downloadLink.download = `${profile.business.replace(/\s+/g, '-').toLowerCase()}-qr-code.svg`;
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    document.body.removeChild(downloadLink);
+                    URL.revokeObjectURL(svgUrl);
+                    showToast('QR Code downloaded!');
+                  }}
+                >
+                  <i className="fa-solid fa-download" aria-hidden="true" />
+                  <span>Download QR</span>
+                </button>
+
+                <button
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: 'var(--screen-control)',
+                    border: '1px solid var(--screen-control-border)',
+                    color: 'var(--screen-text)',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6
+                  }}
+                  onClick={() => {
+                    const targetUrl = profile.custom_qr_url && profile.custom_qr_url.trim()
+                      ? profile.custom_qr_url.trim()
+                      : window.location.origin;
+                    navigator.clipboard.writeText(targetUrl);
+                    showToast('Card link copied to clipboard!');
+                  }}
+                >
+                  <i className="fa-regular fa-copy" aria-hidden="true" />
+                  <span>Copy Link</span>
+                </button>
+              </div>
             </div>
           </section>
         </div>
