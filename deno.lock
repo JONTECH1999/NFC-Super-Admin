@@ -1,0 +1,17 @@
+{
+  "version": "5",
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.118.0": "56fce2ec273698af8a739c03a005c4b2160e163e5d2c0ede05de7e9bd47e28b8"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@supabase/supabase-js@^2.118.0",
+        "npm:qrcode.react@^4.2.0",
+        "npm:react-dom@^18.3.1",
+        "npm:react@^18.3.1",
+        "npm:vite@^8.3.4"
+      ]
+    }
+  }
+}

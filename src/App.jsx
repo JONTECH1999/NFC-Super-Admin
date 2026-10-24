@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { supabase, supabaseUrl } from "./lib/supabase";
+import { profilesTable, productsTable, siteId, supabase, supabaseUrl } from "./lib/supabase";
 import { applyFavicon, applySiteTitle } from "./lib/siteSettings";
 
 /* ── Fallback data (used until Supabase loads) ── */
@@ -38,7 +38,6 @@ function normalizeProfile(row) {
     youtube: row.youtube !== undefined && row.youtube !== null ? row.youtube : "",
     description: row.description !== undefined && row.description !== null ? row.description : fallbackProfile.description,
     eyebrow: row.eyebrow !== undefined && row.eyebrow !== null ? row.eyebrow : fallbackProfile.eyebrow,
-    showcase_caption: row.showcase_caption || '',
     profile_image_url: row.profile_image_url || fallbackProfile.profile_image_url,
     site_title: row.site_title || '',
     site_icon_url: row.site_icon_url || '',
@@ -49,7 +48,7 @@ function normalizeProfile(row) {
         if (row.custom_links) {
           return typeof row.custom_links === 'string' ? JSON.parse(row.custom_links) : row.custom_links;
         }
-        const cached = localStorage.getItem('nfc_card_custom_links');
+        const cached = localStorage.getItem(`nfc_card_custom_links_${siteId}`);
         if (cached) return JSON.parse(cached);
       } catch (e) {}
       return [];
@@ -309,8 +308,9 @@ function ProductShop({ profile, products: initialProducts }) {
     async function loadAllProducts() {
       try {
         const { data } = await supabase
-          .from("products")
+          .from(productsTable)
           .select("*")
+          .eq("site_id", siteId)
           .order("sort_order");
         if (!cancelled && data && data.length > 0) setShopProducts(data);
       } catch (err) {
@@ -584,18 +584,49 @@ function ProductShop({ profile, products: initialProducts }) {
   );
 }
 
-function ActionLink({ action }) {
+function ActionLink({ action, onPaymentClick }) {
+  if (action.payment) {
+    return (
+      <button
+        className={`action social payment-action payment-${action.icon}`}
+        type="button"
+        aria-label={`Show ${action.label} payment QR code`}
+        onClick={() => onPaymentClick(action)}
+      >
+        <span className={`payment-brand-icon payment-brand-${action.icon}`} aria-hidden="true">
+          {action.icon === "gcash"
+            ? <img src="/gcash-icon.webp" alt="" />
+            : action.icon === "maya"
+              ? <img src="/maya-icon.png" alt="" />
+              : action.icon === "paypal"
+                ? <img src="/paypal-icon.png" alt="" />
+                : "₱"}
+        </span>
+        <span>{action.label}</span>
+      </button>
+    );
+  }
+
+  const facebookBrandClass = action.icon?.includes("facebook") ? " social-facebook" : "";
+  const messengerBrandClass = action.icon?.includes("facebook-messenger") ? " social-messenger" : "";
+  const youtubeBrandClass = action.icon?.includes("youtube") ? " social-youtube" : "";
+  const phoneBrandClass = action.social && action.icon?.includes("phone") ? " social-phone" : "";
+  const iconClass = phoneBrandClass ? "fa-solid fa-phone-volume" : action.icon;
+  const displayLabel = youtubeBrandClass && /^youtube(?:\s+\d+)?$/i.test(action.label.trim())
+    ? "YouTube"
+    : action.label;
+
   return (
     <a
-      className={`action${action.social ? ` social social-${action.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` : ""}`}
+      className={`action${action.social ? ` social social-${displayLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-")}${facebookBrandClass}${messengerBrandClass}${youtubeBrandClass}${phoneBrandClass}` : ""}`}
       href={action.href}
       aria-label={action.ariaLabel}
       {...(action.external
         ? { target: "_blank", rel: "noopener noreferrer" }
         : {})}
     >
-      <i className={action.icon} aria-hidden="true" />
-      <span>{action.label}</span>
+      <i className={iconClass} aria-hidden="true" />
+      <span>{displayLabel}</span>
     </a>
   );
 }
@@ -723,6 +754,7 @@ function resolveCustomIcon(icon, label = "", url = "") {
   if (icon && icon.trim()) return icon.trim();
   const text = `${label} ${url}`.toLowerCase();
   if (text.includes("tiktok")) return "fa-brands fa-tiktok";
+  if (text.includes("messenger") || text.includes("m.me")) return "fa-brands fa-facebook-messenger";
   if (text.includes("facebook") || text.includes("fb.")) return "fa-brands fa-facebook-f";
   if (text.includes("instagram") || text.includes("ig.")) return "fa-brands fa-instagram";
   if (text.includes("youtube")) return "fa-brands fa-youtube";
@@ -747,23 +779,14 @@ function buildActions(profile) {
     baseActions.push({
       label: "Call",
       icon: "fa-solid fa-phone",
-      href: `tel:${profile.phoneLink || profile.phone}`,
-      ariaLabel: `Call ${profile.name} at ${profile.phone || profile.phoneLink}`,
+      href: `tel:${phone}`,
+      ariaLabel: `Call ${profile.name} at ${phone}`,
     });
     baseActions.push({
       label: "Text",
       icon: "fa-regular fa-comment-dots",
-      href: `sms:${profile.phoneLink || profile.phone}`,
+      href: `sms:${phone}`,
       ariaLabel: `Text ${profile.name}`,
-    });
-  }
-
-  if (profile.email) {
-    baseActions.push({
-      label: "Email",
-      icon: "fa-regular fa-envelope",
-      href: `mailto:${profile.email}`,
-      ariaLabel: `Email ${profile.name}`,
     });
   }
 
@@ -774,6 +797,15 @@ function buildActions(profile) {
       href: mapUrl,
       ariaLabel: `Find ${profile.business} at ${profile.address}`,
       external: true,
+    });
+  }
+
+  if (profile.email) {
+    baseActions.push({
+      label: "Email",
+      icon: "fa-regular fa-envelope",
+      href: `mailto:${profile.email}`,
+      ariaLabel: `Email ${profile.name}`,
     });
   }
 
@@ -803,18 +835,41 @@ function buildActions(profile) {
   // Map any custom links (TikTok, another FB page, Instagram, LinkedIn, etc.)
   const customLinksList = Array.isArray(profile.custom_links)
     ? profile.custom_links
-        .filter((item) => item && (item.label || item.url))
+        .filter((item) => item && item.type !== "payment" && (item.label || item.url))
+        .map((item) => {
+          const isPhoneLink = item.icon === "fa-solid fa-phone";
+          const destination = (item.url || "").trim();
+          const phoneNumber = destination.replace(/^tel:/i, "").replace(/[^\d+]/g, "");
+          return {
+            label: item.label || "Link",
+            icon: resolveCustomIcon(item.icon, item.label, item.url),
+            href: isPhoneLink
+              ? (phoneNumber ? `tel:${phoneNumber}` : "#")
+              : destination
+                ? (destination.startsWith("http") ? destination : `https://${destination}`)
+                : "#",
+            ariaLabel: `${item.label || "Link"} for ${profile.business}`,
+            external: !isPhoneLink,
+            social: true,
+          };
+        })
+    : [];
+
+  const paymentActions = Array.isArray(profile.custom_links)
+    ? profile.custom_links
+        .filter((item) => item?.type === "payment" && item.label && item.qr_image_url)
         .map((item) => ({
-          label: item.label || "Link",
-          icon: resolveCustomIcon(item.icon, item.label, item.url),
-          href: item.url ? (item.url.startsWith("http") ? item.url : `https://${item.url}`) : "#",
-          ariaLabel: `${item.label || "Link"} for ${profile.business}`,
-          external: true,
-          social: true,
+          id: item.id,
+          label: item.label,
+          icon: item.icon || "gcash",
+          qrImageUrl: item.qr_image_url,
+          paymentUrl: item.payment_url || "",
+          ariaLabel: `Show ${item.label} payment QR code`,
+          payment: true,
         }))
     : [];
 
-  return [...baseActions, ...customLinksList];
+  return [...baseActions, ...customLinksList, ...paymentActions];
 }
 
 const CACHE_SCOPE = (() => {
@@ -827,8 +882,8 @@ const CACHE_SCOPE = (() => {
   return "default";
 })();
 
-const PROFILE_CACHE_KEY = `nfc_card_profile_cache_${CACHE_SCOPE}`;
-const PRODUCTS_CACHE_KEY = `nfc_card_products_cache_${CACHE_SCOPE}`;
+const PROFILE_CACHE_KEY = `nfc_card_profile_cache_${CACHE_SCOPE}_${siteId}`;
+const PRODUCTS_CACHE_KEY = `nfc_card_products_cache_${CACHE_SCOPE}_${siteId}`;
 
 function getInitialProfile() {
   try {
@@ -865,8 +920,8 @@ function App() {
     async function loadData() {
       try {
         const [profileRes, productsRes] = await Promise.all([
-          supabase.from("profiles").select("*").limit(1).single(),
-          supabase.from("products").select("*").order("sort_order"),
+          supabase.from(profilesTable).select("*").eq("site_id", siteId).single(),
+          supabase.from(productsTable).select("*").eq("site_id", siteId).order("sort_order"),
         ]);
 
         if (cancelled) return;
@@ -876,7 +931,6 @@ function App() {
           setProfile(norm);
           try {
             localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(norm));
-            localStorage.setItem("nfc_card_profile_cache", JSON.stringify(norm));
           } catch (e) {}
           if (norm.theme_mode) {
             try {
@@ -895,8 +949,7 @@ function App() {
           }
           if (Array.isArray(norm.custom_links)) {
             try {
-              localStorage.setItem(`nfc_card_custom_links_${CACHE_SCOPE}`, JSON.stringify(norm.custom_links));
-              localStorage.setItem("nfc_card_custom_links", JSON.stringify(norm.custom_links));
+              localStorage.setItem(`nfc_card_custom_links_${siteId}`, JSON.stringify(norm.custom_links));
             } catch (e) {}
           }
         }
@@ -905,7 +958,6 @@ function App() {
           setAllProducts(normProds);
           try {
             localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(normProds));
-            localStorage.setItem("nfc_card_products_cache", JSON.stringify(normProds));
           } catch (e) {}
         }
       } catch (err) {
@@ -932,8 +984,15 @@ function App() {
   const actions = buildActions(profile);
 
   const [introPhase, setIntroPhase] = useState("loading");
+  const [profileImageLoadedUrl, setProfileImageLoadedUrl] = useState("");
+  const [failedProfileImageUrl, setFailedProfileImageUrl] = useState("");
+  const profileImageReady =
+    !profile.profile_image_url ||
+    profileImageLoadedUrl === profile.profile_image_url ||
+    failedProfileImageUrl === profile.profile_image_url;
   const [tapRipple, setTapRipple] = useState(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const [activePayment, setActivePayment] = useState(null);
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
@@ -1176,8 +1235,8 @@ function App() {
   }, [profile.business]);
 
   useEffect(() => {
-    // Only begin exiting the intro screen once the latest data is ready from Supabase
-    if (!dataReady) return undefined;
+    // Keep the intro visible until its profile image is ready as well as the data.
+    if (!dataReady || !profileImageReady) return undefined;
 
     const reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -1199,7 +1258,7 @@ function App() {
       window.clearTimeout(toastTimer.current);
       window.clearTimeout(rippleTimer.current);
     };
-  }, [dataReady]);
+  }, [dataReady, profile.profile_image_url, profileImageReady]);
 
   useEffect(() => {
     if (qrOpen) closeButton.current?.focus();
@@ -1287,13 +1346,77 @@ function App() {
     }
   }
 
-  function downloadContact() {
+  async function downloadContact() {
     const escapeVCardValue = (value) =>
       String(value || "")
         .replace(/\\/g, "\\\\")
         .replace(/\r?\n/g, "\\n")
         .replace(/([,;])/g, "\\$1");
-    const phone = profile.phoneLink || profile.phone;
+    const foldVCardLine = (line) => {
+      let folded = "";
+      let lineLength = 0;
+      for (const character of line) {
+        const codePoint = character.codePointAt(0);
+        const characterLength = codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4;
+        if (lineLength + characterLength > 75) {
+          folded += "\r\n ";
+          lineLength = 1;
+        }
+        folded += character;
+        lineLength += characterLength;
+      }
+      return folded;
+    };
+
+    let photoField = "";
+    if (profile.profile_image_url) {
+      let objectUrl = "";
+      try {
+        const response = await fetch(profile.profile_image_url);
+        if (!response.ok) throw new Error("The profile image could not be downloaded.");
+        const imageBlob = await response.blob();
+        if (!imageBlob.type.startsWith("image/")) {
+          throw new Error("The profile image URL did not return an image.");
+        }
+
+        objectUrl = URL.createObjectURL(imageBlob);
+        const image = new Image();
+        image.src = objectUrl;
+        await image.decode();
+
+        const scale = Math.min(1, 512 / Math.max(image.naturalWidth, image.naturalHeight));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("The profile image could not be processed.");
+        context.fillStyle = "#fff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        const jpegBlob = await new Promise((resolve, reject) => {
+          canvas.toBlob(
+            (blob) => blob ? resolve(blob) : reject(new Error("The profile image could not be encoded.")),
+            "image/jpeg",
+            0.82,
+          );
+        });
+        const bytes = new Uint8Array(await jpegBlob.arrayBuffer());
+        let binary = "";
+        for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+          binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+        }
+        photoField = `PHOTO;ENCODING=b;TYPE=JPEG:${btoa(binary)}`;
+      } catch (error) {
+        console.error("Unable to embed profile photo in contact file:", error);
+        showToast("Could not add the profile photo to the contact file. Please try again.", "error");
+        return;
+      } finally {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      }
+    }
+
+    const phone = profile.phone || profile.phoneLink;
     const fields = [
       "BEGIN:VCARD",
       "VERSION:3.0",
@@ -1303,10 +1426,11 @@ function App() {
       phone && `TEL;TYPE=CELL:${escapeVCardValue(phone)}`,
       profile.email && `EMAIL:${escapeVCardValue(profile.email)}`,
       profile.address && `ADR;TYPE=WORK:;;${escapeVCardValue(profile.address)};;;;`,
+      photoField,
       `URL:${escapeVCardValue(window.location.href)}`,
       "END:VCARD",
     ].filter(Boolean);
-    const blob = new Blob([fields.join("\r\n")], { type: "text/vcard;charset=utf-8" });
+    const blob = new Blob([fields.map(foldVCardLine).join("\r\n")], { type: "text/vcard;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     const filename = (profile.name || profile.business || "business-contact")
@@ -1319,7 +1443,7 @@ function App() {
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    showToast("Contact saved to your device.");
+    showToast(photoField ? "Contact with profile photo downloaded." : "Contact downloaded.");
   }
 
   async function installCard() {
@@ -1358,13 +1482,14 @@ function App() {
     function handleKeyDown(event) {
       if (event.key === "Escape") {
         if (installHelpOpen) closeInstallHelp();
+        else if (activePayment) setActivePayment(null);
         else closeQR();
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [qrOpen, installHelpOpen]);
+  }, [qrOpen, installHelpOpen, activePayment]);
 
   if (window.location.pathname.replace(/\/+$/, "") === "/shop") {
     return <ProductShop profile={profile} products={allProducts} />;
@@ -1386,8 +1511,18 @@ function App() {
                 <span className="intro-orbit intro-orbit-one" />
                 <span className="intro-orbit intro-orbit-two" />
                 <span className="intro-emblem-core">
-                  {profile.profile_image_url ? (
-                    <img src={profile.profile_image_url} alt="" />
+                  {profile.profile_image_url &&
+                  failedProfileImageUrl !== profile.profile_image_url ? (
+                    <img
+                      src={profile.profile_image_url}
+                      alt=""
+                      onLoad={() =>
+                        setProfileImageLoadedUrl(profile.profile_image_url)
+                      }
+                      onError={() =>
+                        setFailedProfileImageUrl(profile.profile_image_url)
+                      }
+                    />
                   ) : (
                     <i className="fa-solid fa-user-tie" aria-hidden="true" />
                   )}
@@ -1414,7 +1549,10 @@ function App() {
                 <h1 className="intro-brand">{profile.name}</h1>
                 {profile.role && <p className="intro-role">{profile.role}</p>}
               </div>
-              <div className="intro-loader" role="presentation">
+              <div
+                className={`intro-loader${dataReady && profileImageReady ? " is-ready" : ""}`}
+                role="presentation"
+              >
                 <span />
               </div>
               <p className="intro-caption">
@@ -1453,7 +1591,6 @@ function App() {
             </>
           )}
           <header className="app-status-bar" aria-label="Card controls">
-            <span className="status-brand">{profile.business}</span>
             <button
               className="status-theme-button"
               type="button"
@@ -1481,14 +1618,18 @@ function App() {
           <div className="profile-column">
             <section className="profile-panel" aria-label="Business owner profile">
               <div className="profile-halo" aria-hidden="true" />
-              {profile.profile_image_url ? (
+              {profile.profile_image_url &&
+              failedProfileImageUrl !== profile.profile_image_url ? (
                 <img
                   className="profile-photo"
                   src={profile.profile_image_url}
                   alt={`Portrait of ${profile.name}`}
-                  onError={(event) => {
-                    event.currentTarget.hidden = true;
-                  }}
+                  onLoad={() =>
+                    setProfileImageLoadedUrl(profile.profile_image_url)
+                  }
+                  onError={() =>
+                    setFailedProfileImageUrl(profile.profile_image_url)
+                  }
                 />
               ) : (
                 <div className="profile-photo-placeholder" aria-hidden="true">
@@ -1534,18 +1675,9 @@ function App() {
               </div>
 
               <nav className="profile-quick-actions" aria-label="Quick contact actions">
-                {actions.filter((action) => ["Call", "Text", "Email"].includes(action.label)).map((action) => (
+                {actions.filter((action) => !action.social && ["Call", "Text", "Location", "Email"].includes(action.label)).map((action) => (
                   <ActionLink action={action} key={action.label} />
                 ))}
-                <button
-                  className="action"
-                  type="button"
-                  aria-label="Share this business card"
-                  onClick={shareCard}
-                >
-                  <i className="fa-solid fa-arrow-up-from-bracket" aria-hidden="true" />
-                  <span>Share</span>
-                </button>
               </nav>
 
               <button
@@ -1581,7 +1713,7 @@ function App() {
               </div>
             </section>
 
-            {actions.some((action) => action.social && action.href && action.href !== "#") && (
+            {actions.some((action) => action.social && !action.payment && action.href && action.href !== "#") && (
               <section className="social-section" aria-labelledby="social-heading">
                 <div className="content-card-heading">
                   <div>
@@ -1592,9 +1724,32 @@ function App() {
                 </div>
                 <nav className="social-grid" aria-label="Social media links">
                   {actions
-                    .filter((action) => action.social && action.href && action.href !== "#")
+                    .filter((action) => action.social && !action.payment && action.href && action.href !== "#")
                     .map((action) => (
                       <ActionLink action={action} key={action.label} />
+                    ))}
+                </nav>
+              </section>
+            )}
+
+            {actions.some((action) => action.payment) && (
+              <section className="payment-section" aria-labelledby="payment-heading">
+                <div className="content-card-heading">
+                  <div>
+                    <p className="section-kicker">Quick and convenient</p>
+                    <h2 id="payment-heading">Payment Options</h2>
+                  </div>
+                  <i className="fa-solid fa-wallet" aria-hidden="true" />
+                </div>
+                <nav className="social-grid payment-grid" aria-label="Payment QR codes">
+                  {actions
+                    .filter((action) => action.payment)
+                    .map((action) => (
+                      <ActionLink
+                        action={action}
+                        key={action.id || `${action.icon}-${action.label}`}
+                        onPaymentClick={setActivePayment}
+                      />
                     ))}
                 </nav>
               </section>
@@ -1610,9 +1765,7 @@ function App() {
                       loading="lazy"
                     />
                     <span>
-                      {profile.showcase_caption && profile.showcase_caption.trim()
-                        ? profile.showcase_caption.trim()
-                        : (profile.business || "Featured work")}
+                      {profile.business || "Featured work"}
                     </span>
                   </div>
                 )}
@@ -1620,11 +1773,10 @@ function App() {
                 {profile.description && <p className="description">{profile.description}</p>}
                 <div className="contact-list" aria-label="Direct contact details">
                   {profile.phone && (
-                    <a href={`tel:${profile.phoneLink || profile.phone}`}>
+                    <div className="contact-detail">
                       <i className="fa-solid fa-phone" aria-hidden="true" />
                       <span><small>Direct call</small>{profile.phone}</span>
-                      <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
-                    </a>
+                    </div>
                   )}
                   {profile.email && (
                     <a href={`mailto:${profile.email}`}>
@@ -1895,6 +2047,63 @@ function App() {
                 </button>
               </div>
             </div>
+          </section>
+        </div>
+      )}
+
+      {activePayment && (
+        <div
+          className="modal payment-qr-modal"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setActivePayment(null);
+          }}
+        >
+          <section
+            className="modal-card payment-qr-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payment-qr-title"
+          >
+            <button
+              className="modal-close"
+              type="button"
+              aria-label="Close payment QR code"
+              onClick={() => setActivePayment(null)}
+            >
+              <i className="fa-solid fa-xmark" aria-hidden="true" />
+            </button>
+            <h2 id="payment-qr-title">Pay with {activePayment.label}</h2>
+            <p>Scan this QR code with your payment app.</p>
+            <div className="payment-qr-image-frame">
+              <img src={activePayment.qrImageUrl} alt={`${activePayment.label} payment QR code`} />
+            </div>
+            {activePayment.paymentUrl && (
+              <a
+                className={`payment-proceed-button payment-proceed-${activePayment.icon}`}
+                href={activePayment.paymentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span className="payment-proceed-icon" aria-hidden="true">
+                  {activePayment.icon === "gcash"
+                    ? <img src="/gcash-icon.webp" alt="" />
+                    : activePayment.icon === "maya"
+                      ? <img src="/maya-icon.png" alt="" />
+                      : activePayment.icon === "paypal"
+                        ? <img src="/paypal-icon.png" alt="" />
+                        : <i className="fa-solid fa-wallet" />}
+                </span>
+                <span className="payment-proceed-copy">
+                  <strong>Continue to {activePayment.label}</strong>
+                  <small>Opens payment page in a new tab</small>
+                </span>
+                <span className="payment-proceed-arrow" aria-hidden="true">
+                  <i className="fa-solid fa-arrow-up-right-from-square" />
+                </span>
+              </a>
+            )}
+            <p className="payment-qr-hint">Open your payment app on another device, or save this image to scan it later.</p>
           </section>
         </div>
       )}

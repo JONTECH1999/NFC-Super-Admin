@@ -25,6 +25,11 @@ display.
   links.
 - **Direct actions:** call, text, email, location, and social links as
   configured in the card.
+- **Social links:** configurable social and custom action buttons displayed in
+  a dedicated card on the public page.
+- **Payment QR codes:** upload payment QR images such as GCash; payment buttons
+  open the selected QR image in a scan-friendly dialog. An optional payment
+  destination URL adds a secure external “Proceed to payment” button.
 - **QR code:** generates a QR code for the current card URL.
 - **Share:** uses the device share dialog where available, with a copy-link
   fallback.
@@ -42,7 +47,10 @@ display.
 - **React 18** renders the card and gallery.
 - **Vite** serves the development app and builds the site.
 - **qrcode.react** renders the QR code.
-- **Firebase Hosting** serves the production build from `dist`.
+- **Firebase Hosting** serves each site's production build from `dist`.
+- Managed sites share the Supabase project but store profile and product data
+  in tenant-scoped tables keyed by `site_id`; admin changes are restricted to
+  the selected site by row-level security.
 
 | Path | Purpose |
 | --- | --- |
@@ -53,13 +61,101 @@ display.
 | `index1.html`–`index12.html` | Standalone sample layout pages |
 | `public/` | Static images, app icons, manifest, and service worker |
 | `vite.config.js` | Configures Vite to build all 13 HTML entry points |
-| `firebase.json` | Firebase Hosting configuration; build output is `dist` |
+| `firebase.json` | Separate Firebase Hosting targets; build output is `dist` |
 
-The project is static and has no server-side database or client-management
-system. Business details and service content are currently maintained in the
-source code.
+The project is static and uses Supabase for profile and product content. Image
+uploads use a site-specific folder in the shared `images` storage bucket.
 
 ## Development and deployment
+
+Copy `.env.example` to `.env.local` and set the Supabase project URL and anon
+key. These are Vite public variables and are included in the browser build; do
+not use a Supabase service-role key here.
+
+Before deploying this site for the first time, run
+[`isolate-calling-card-d1.sql`](./isolate-calling-card-d1.sql) in the existing
+Supabase project's SQL Editor. It creates dedicated tables using the existing
+tables' schema, grants public read access, restricts writes to accounts
+assigned to this site, and creates an empty profile row. It does not copy or
+modify the other site's business data.
+
+### Multi-site super-admin access
+
+All managed public sites use `site_profiles` and `site_products` in one
+Supabase project, with a `site_id` on each row. Row Level Security checks each
+client's site assignment for every write. Public profile, product, and image
+reads remain public because this content is displayed on the card; do not put
+private customer information in these tables or the public image bucket.
+
+The owner portal is served from `https://superadmin-callingcard.web.app`.
+Client accounts use unique email addresses within the shared Supabase Auth
+project. When creating or resetting a client login, the owner chooses and
+confirms the password; the portal displays it once after a successful change
+so it can be delivered securely. Never share the Supabase project-owner
+password or put a service-role key in browser code.
+The owner can use **Manage card** in the portal to open any site's admin; sign
+in there with the super-admin account to edit that site's content.
+
+The managed tenants are:
+
+| Site name | Site ID | Public URL |
+| --- | --- | --- |
+| Calling Card D1 | `calling-card-d1` | `https://calling-card-d1.web.app` |
+| Remo Contacts | `main` | `https://remo-contacts.web.app` |
+| Aljon Contacts | `aljon-contacts` | `https://calling-card.web.app` |
+
+Aljon Contacts uses the Remo app template but has its own empty profile,
+product list, local cache namespace, and `aljon-contacts/` image-storage path.
+Build and deploy it with `npm run deploy:aljon`; this uses its own Firebase
+Hosting target and does not deploy to the Remo or Calling Card D1 targets.
+
+One-time setup:
+
+1. In Supabase SQL Editor, run `secure-client-auth.sql` if it has not already
+   been applied, then run
+   [`multi-site-super-admin.sql`](./multi-site-super-admin.sql). The migration
+   copies the existing `calling-card-d1` and `main` profile/product data into
+   the new site-scoped tables. Review the copied data before removing any old
+   tables; the migration does not drop the legacy tables.
+2. Create or use your owner account in **Authentication → Users**. Run the
+   super-admin assignment query at the end of `multi-site-super-admin.sql`
+   with your own account email. Enable MFA on this owner account and disable
+   public sign-ups in Supabase Auth settings.
+3. From a terminal, install/use the Supabase CLI, log in, and link this
+   repository to the correct project:
+
+   ```powershell
+   npx supabase login
+   npx supabase link --project-ref YOUR_PROJECT_REF
+   npx supabase functions deploy super-admin-sites --project-ref YOUR_PROJECT_REF
+   ```
+
+   The function uses Supabase's server-side service-role environment secret.
+   Never prefix that secret with `VITE_`, add it to `.env`, or send it to the
+   browser. The function verifies the caller against `super_admins`.
+4. The `superadmin-callingcard` Firebase Hosting site already exists. Its
+   target is configured in `.firebaserc` and `firebase.json`. After the SQL
+   migration and Edge Function are ready, publish the portal with:
+
+   ```powershell
+   npm run deploy:superadmin
+   ```
+
+5. To create a client site in the portal, enter its unique site ID, public
+   HTTPS URL, client's unique email, and a password of 12–128 characters.
+   Confirm the password, then deliver it using a secure channel. Build each
+   client's website with that same ID as `VITE_SITE_ID`; this ensures it only
+   loads that site's rows:
+
+   ```powershell
+   $env:VITE_SITE_ID = "client-site-id"
+   npm run build
+   Remove-Item Env:VITE_SITE_ID
+   ```
+
+The SQL migrations and Edge Function must be deployed before publishing the
+super-admin frontend. The browser only provides the interface; all privileged
+account creation and site authorization happen on the server or in RLS.
 
 Install dependencies and start the local development server:
 
@@ -75,15 +171,15 @@ npm run build
 npm run preview
 ```
 
-Deploy the Hosting build to the intended Firebase project:
+Deploy only this site's Hosting target:
 
 ```sh
-npx firebase-tools deploy --only hosting --project digital-callingcard
+npm run deploy:main
 ```
 
-The Firebase project must be explicitly supplied: the repository's `.firebaserc`
-default project may differ from the `digital-callingcard` project that owns the
-`calling-card` Hosting site. Confirm the project and site before deploying.
+The `calling-card` Hosting target is mapped to the `calling-card-d1` site in
+the `digital-callingcard` project. Its public URL is
+`https://calling-card-d1.web.app`.
 
 ## Client discovery and content checklist
 

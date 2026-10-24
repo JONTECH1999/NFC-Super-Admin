@@ -9,6 +9,22 @@
           "business-card-2"
         ]
       }
+    },
+    "digital-callingcard": {
+      "hosting": {
+        "remo-contacts": [
+          "remo-contacts"
+        ],
+        "calling-card": [
+          "calling-card-d1"
+        ],
+        "superadmin-callingcard": [
+          "superadmin-callingcard"
+        ],
+        "aljon-contacts-hosting": [
+          "calling-card"
+        ]
+      }
     }
   },
   "etags": {}

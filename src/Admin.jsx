@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { supabase, supabaseUrl } from './lib/supabase';
+import { useState, useEffect, useCallback, useRef, useId } from 'react';
+import { createPortal } from 'react-dom';
+import { profilesTable, productsTable, siteId, supabase, supabaseUrl } from './lib/supabase';
 import { applyFavicon, applySiteTitle } from './lib/siteSettings';
 import './admin.css';
 
@@ -13,8 +14,8 @@ const CACHE_SCOPE = (() => {
   return "default";
 })();
 
-const PROFILE_CACHE_KEY = `nfc_card_profile_cache_${CACHE_SCOPE}`;
-const PRODUCTS_CACHE_KEY = `nfc_card_products_cache_${CACHE_SCOPE}`;
+const PROFILE_CACHE_KEY = `nfc_card_profile_cache_${CACHE_SCOPE}_${siteId}`;
+const PRODUCTS_CACHE_KEY = `nfc_card_products_cache_${CACHE_SCOPE}_${siteId}`;
 
 /* ============================================================
    Toast Component
@@ -29,6 +30,79 @@ function Toast({ message, type, onDismiss }) {
     <div className={`admin-toast ${type}`}>
       {message}
     </div>
+  );
+}
+
+function HelpLabel({ htmlFor, children, help }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+  const triggerRef = useRef(null);
+  const tooltipRef = useRef(null);
+  const tooltipId = useId();
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event) => {
+      if (
+        !wrapperRef.current?.contains(event.target)
+        && !tooltipRef.current?.contains(event.target)
+      ) setOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      const tooltip = tooltipRef.current;
+      if (!trigger || !tooltip) return;
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const tooltipWidth = Math.min(250, window.innerWidth - 24);
+      const left = Math.min(
+        Math.max(12, triggerRect.left),
+        window.innerWidth - tooltipWidth - 12,
+      );
+      const below = triggerRect.bottom + 6;
+      const top = below + tooltip.offsetHeight <= window.innerHeight - 12
+        ? below
+        : Math.max(12, triggerRect.top - tooltip.offsetHeight - 6);
+
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+      tooltip.style.width = `${tooltipWidth}px`;
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
+
+  return (
+    <span className="admin-help-label" ref={wrapperRef}>
+      <label className="admin-label" htmlFor={htmlFor}>{children}</label>
+      <button
+        ref={triggerRef}
+        className="admin-help-trigger"
+        type="button"
+        aria-label={`Help: ${children}`}
+        aria-expanded={open}
+        aria-describedby={open ? tooltipId : undefined}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <i className="fa-solid fa-question" aria-hidden="true" />
+      </button>
+      {open && createPortal(
+        <span ref={tooltipRef} className="admin-help-tooltip" id={tooltipId} role="tooltip">{help}</span>,
+        document.querySelector('.admin-page') || document.body,
+      )}
+    </span>
   );
 }
 
@@ -58,8 +132,8 @@ function LoginForm({ onLogin }) {
   return (
     <div className="admin-login">
       <form className="admin-login-card" onSubmit={handleSubmit}>
-        <h1 className="admin-login-title">Admin Login</h1>
-        <p className="admin-login-subtitle">Sign in to manage your business card</p>
+        <h1 className="admin-login-title">Client Login</h1>
+        <p className="admin-login-subtitle">Sign in with the account provided by your site administrator.</p>
 
         {error && <div className="admin-login-error">{error}</div>}
 
@@ -104,10 +178,87 @@ function LoginForm({ onLogin }) {
   );
 }
 
+function RequiredPasswordChange({ session, onComplete }) {
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError('');
+    if (password.length < 12) {
+      setError('Choose a password with at least 12 characters.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('The passwords do not match.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data, error: completionError } = await supabase.functions.invoke('super-admin-sites', {
+        body: { action: 'complete_client_password_change', new_password: password },
+      });
+      if (completionError) throw completionError;
+      if (data?.error) throw new Error(data.error);
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) throw refreshError;
+      onComplete();
+    } catch (updateError) {
+      setError(updateError.message || 'Unable to update your password. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="admin-login">
+      <form className="admin-login-card" onSubmit={handleSubmit}>
+        <h1 className="admin-login-title">Choose a new password</h1>
+        <p className="admin-login-subtitle">For your security, replace the temporary password before continuing.</p>
+        {error && <div className="admin-login-error" role="alert">{error}</div>}
+        <div className="admin-form-group">
+          <label className="admin-label" htmlFor="new-client-password">New password</label>
+          <input
+            id="new-client-password"
+            className="admin-input"
+            type="password"
+            autoComplete="new-password"
+            minLength={12}
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </div>
+        <div className="admin-form-group">
+          <label className="admin-label" htmlFor="confirm-client-password">Confirm new password</label>
+          <input
+            id="confirm-client-password"
+            className="admin-input"
+            type="password"
+            autoComplete="new-password"
+            minLength={12}
+            required
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+          />
+        </div>
+        <button className="admin-btn admin-btn-primary" type="submit" disabled={saving}>
+          {saving ? 'Updating…' : 'Set new password'}
+        </button>
+        <button className="admin-btn admin-btn-outline" type="button" onClick={() => supabase.auth.signOut()}>
+          Sign out
+        </button>
+      </form>
+    </div>
+  );
+}
+
 /* ============================================================
    Profile Tab
    ============================================================ */
-function ProfileTab({ showToast }) {
+function ProfileTab({ showToast, section }) {
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(true);
@@ -116,13 +267,15 @@ function ProfileTab({ showToast }) {
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [customLinks, setCustomLinks] = useState([]);
+  const [pendingLinkRemoval, setPendingLinkRemoval] = useState(null);
+  const [uploadingPaymentIndex, setUploadingPaymentIndex] = useState(null);
   const fileRef = useRef(null);
   const iconFileRef = useRef(null);
 
   const fetchProfile = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('profiles').select('*').limit(1).single();
+      const { data, error } = await supabase.from(profilesTable).select('*').eq('site_id', siteId).single();
       if (error) throw error;
       setProfile(data);
       setForm(data);
@@ -134,10 +287,36 @@ function ProfileTab({ showToast }) {
         if (data?.custom_links) {
           links = typeof data.custom_links === 'string' ? JSON.parse(data.custom_links) : data.custom_links;
         } else {
-          const cached = localStorage.getItem('nfc_card_custom_links');
+          const cached = localStorage.getItem(`nfc_card_custom_links_${siteId}`);
           if (cached) links = JSON.parse(cached);
         }
-        setCustomLinks(Array.isArray(links) ? links : []);
+        const normalizedLinks = Array.isArray(links)
+          ? links.map((item) => (
+            item?.icon?.includes('youtube') && /^youtube(?:\s+\d+)?$/i.test(item.label?.trim() || '')
+              ? { ...item, label: 'YouTube' }
+              : item
+          ))
+          : [];
+        const legacySocials = [
+          { key: 'facebook', label: 'Facebook', icon: 'fa-brands fa-facebook-f' },
+          { key: 'youtube', label: 'YouTube', icon: 'fa-brands fa-youtube' },
+        ];
+        legacySocials.forEach(({ key, label, icon }) => {
+          const url = data?.[key]?.trim();
+          const alreadyAdded = normalizedLinks.some(
+            (item) => item?.type !== 'payment' && item?.url?.trim() === url,
+          );
+          if (url && !alreadyAdded) {
+            normalizedLinks.push({
+              id: `legacy-${key}`,
+              type: 'social',
+              label,
+              icon,
+              url,
+            });
+          }
+        });
+        setCustomLinks(normalizedLinks);
       } catch (e) {
         setCustomLinks([]);
       }
@@ -170,7 +349,9 @@ function ProfileTab({ showToast }) {
   }, [fetchProfile]);
 
   const handleChange = (field, value) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => field === 'phone'
+      ? { ...prev, phone: value, phone_link: value }
+      : { ...prev, [field]: value });
     setDirty(true);
     if (field === 'site_title') {
       applySiteTitle(value, true);
@@ -180,7 +361,15 @@ function ProfileTab({ showToast }) {
   const handleAddCustomLink = () => {
     setCustomLinks((prev) => [
       ...prev,
-      { id: Date.now().toString(), label: '', url: '', icon: 'fa-brands fa-tiktok' },
+      { id: Date.now().toString(), type: 'social', label: '', url: '', icon: 'fa-brands fa-tiktok' },
+    ]);
+    setDirty(true);
+  };
+
+  const handleAddPaymentLink = () => {
+    setCustomLinks((prev) => [
+      ...prev,
+      { id: Date.now().toString(), type: 'payment', label: 'GCash', icon: 'gcash', qr_image_url: '' },
     ]);
     setDirty(true);
   };
@@ -194,9 +383,51 @@ function ProfileTab({ showToast }) {
     setDirty(true);
   };
 
-  const handleRemoveCustomLink = (index) => {
+  const requestRemoveCustomLink = (index) => {
+    const item = customLinks[index];
+    if (!item) return;
+    setPendingLinkRemoval({
+      index,
+      label: item.label || (item.type === 'payment' ? 'Payment QR button' : 'Untitled button'),
+      type: item.type,
+    });
+  };
+
+  const handleRemoveCustomLink = () => {
+    if (!pendingLinkRemoval) return;
+    const { index } = pendingLinkRemoval;
     setCustomLinks((prev) => prev.filter((_, i) => i !== index));
     setDirty(true);
+    setPendingLinkRemoval(null);
+  };
+
+  const handlePaymentQrUpload = async (index, event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = '';
+    if (!file.type.startsWith('image/')) {
+      showToast('Please choose an image file for the payment QR code.', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Payment QR images must be 5 MB or smaller.', 'error');
+      return;
+    }
+
+    setUploadingPaymentIndex(index);
+    try {
+      const safeName = file.name.replace(/[^\w.-]/g, '_');
+      const path = `${siteId}/payments/${Date.now()}_${safeName}`;
+      const { error: uploadError } = await supabase.storage.from('images').upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
+      handleUpdateCustomLink(index, 'qr_image_url', urlData.publicUrl);
+      showToast('Payment QR image uploaded.', 'success');
+    } catch (err) {
+      showToast('Payment QR upload failed: ' + err.message, 'error');
+    } finally {
+      setUploadingPaymentIndex(null);
+    }
   };
 
   const handleImageUpload = async (e) => {
@@ -204,7 +435,7 @@ function ProfileTab({ showToast }) {
     if (!file) return;
     setUploading(true);
     try {
-      const path = 'profile/' + Date.now() + '_' + file.name;
+      const path = siteId + '/profile/' + Date.now() + '_' + file.name;
       const { error: uploadError } = await supabase.storage.from('images').upload(path, file);
       if (uploadError) throw uploadError;
       const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
@@ -223,7 +454,7 @@ function ProfileTab({ showToast }) {
     if (!file) return;
     setUploadingIcon(true);
     try {
-      const path = 'profile/icon_' + Date.now() + '_' + file.name;
+      const path = siteId + '/profile/icon_' + Date.now() + '_' + file.name;
       const { error: uploadError } = await supabase.storage.from('images').upload(path, file);
       if (uploadError) throw uploadError;
       const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
@@ -239,13 +470,60 @@ function ProfileTab({ showToast }) {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = async (includeCustomLinks = false) => {
+    if (includeCustomLinks) {
+      const incompleteSocial = customLinks.some(
+        (item) => item.type !== 'payment' && item.label?.trim() && !item.url?.trim(),
+      );
+      if (incompleteSocial) {
+        showToast('Add a destination URL to each social button with a label.', 'error');
+        return;
+      }
+      const invalidPhoneButton = customLinks.some((item) => (
+        item.type !== 'payment'
+        && item.icon === 'fa-solid fa-phone'
+        && item.url?.trim()
+        && !/^\+?[\d\s().-]+$/.test(item.url.trim().replace(/^tel:/i, ''))
+      ));
+      if (invalidPhoneButton) {
+        showToast('Enter a valid phone number for the phone button.', 'error');
+        return;
+      }
+      const incompletePayment = customLinks.some((item) => {
+        if (item.type !== 'payment') return false;
+        if (!item.label?.trim() || !item.qr_image_url?.trim()) return true;
+        try {
+          const url = new URL(item.qr_image_url);
+          if (!['http:', 'https:'].includes(url.protocol)) return true;
+        } catch {
+          return true;
+        }
+        if (!item.payment_url?.trim()) return false;
+        try {
+          const url = new URL(item.payment_url);
+          return !['http:', 'https:'].includes(url.protocol);
+        } catch {
+          return true;
+        }
+      });
+      if (incompletePayment) {
+        showToast('Each payment QR needs a label and valid image URL. Payment links must use HTTP or HTTPS.', 'error');
+        return;
+      }
+    }
     setSaving(true);
     try {
       const { id, created_at, updated_at, ...updateData } = form;
-      updateData.custom_links = customLinks;
+      if (includeCustomLinks) {
+        updateData.custom_links = customLinks;
+        updateData.facebook = '';
+        updateData.youtube = '';
+      } else {
+        delete updateData.custom_links;
+      }
+      let migratingLegacySocials = includeCustomLinks;
 
-      let { error } = await supabase.from('profiles').update(updateData).eq('id', profile.id);
+      let { error } = await supabase.from(profilesTable).update(updateData).eq('id', profile.id).eq('site_id', siteId);
 
       // If custom_links, address_link, or custom_qr_url column does not exist yet in DB schema cache, retry without them
       if (error && error.message) {
@@ -253,6 +531,11 @@ function ProfileTab({ showToast }) {
         let shouldRetry = false;
         if (error.message.includes('custom_links')) {
           delete retryData.custom_links;
+          if (includeCustomLinks) {
+            retryData.facebook = profile.facebook || '';
+            retryData.youtube = profile.youtube || '';
+            migratingLegacySocials = false;
+          }
           shouldRetry = true;
         }
         if (error.message.includes('address_link')) {
@@ -263,24 +546,27 @@ function ProfileTab({ showToast }) {
           delete retryData.custom_qr_url;
           shouldRetry = true;
         }
-        if (error.message.includes('showcase_caption')) {
-          delete retryData.showcase_caption;
-          shouldRetry = true;
-        }
         if (shouldRetry) {
-          const retryResult = await supabase.from('profiles').update(retryData).eq('id', profile.id);
+          const retryResult = await supabase.from(profilesTable).update(retryData).eq('id', profile.id).eq('site_id', siteId);
           error = retryResult.error;
         }
       }
 
       if (error) throw error;
-      setProfile({ ...form, custom_links: customLinks });
+      const savedCustomLinks = includeCustomLinks ? customLinks : profile.custom_links;
+      const savedProfile = {
+        ...form,
+        ...(migratingLegacySocials ? { facebook: '', youtube: '' } : {}),
+        custom_links: savedCustomLinks,
+      };
+      setProfile(savedProfile);
+      setForm(savedProfile);
       setDirty(false);
       try {
-        localStorage.setItem(`nfc_card_custom_links_${CACHE_SCOPE}`, JSON.stringify(customLinks));
-        localStorage.setItem('nfc_card_custom_links', JSON.stringify(customLinks));
-        localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify({ ...form, custom_links: customLinks }));
-        localStorage.setItem('nfc_card_profile_cache', JSON.stringify({ ...form, custom_links: customLinks }));
+        if (includeCustomLinks) {
+          localStorage.setItem(`nfc_card_custom_links_${siteId}`, JSON.stringify(customLinks));
+        }
+        localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(savedProfile));
         if (form.custom_qr_url !== undefined) {
           localStorage.setItem('nfc_card_custom_qr_url', form.custom_qr_url || '');
         }
@@ -314,31 +600,45 @@ function ProfileTab({ showToast }) {
     return <div className="admin-empty"><div className="admin-empty-icon">⚠️</div>No profile found.</div>;
   }
 
-  const fields = [
-    { key: 'name', label: 'Name', type: 'text' },
-    { key: 'business', label: 'Business', type: 'text' },
-    { key: 'role', label: 'Role', type: 'text' },
-    { key: 'eyebrow', label: 'Eyebrow Text', type: 'text' },
-    { key: 'showcase_caption', label: 'Showcase Image Caption (e.g. Upholstery Repair Shop)', type: 'text' },
-    { key: 'phone', label: 'Phone', type: 'text' },
-    { key: 'phone_link', label: 'Phone Link', type: 'text' },
-    { key: 'email', label: 'Email', type: 'email' },
-    { key: 'address', label: 'Address', type: 'text' },
-    { key: 'address_link', label: 'Address Link (e.g. Google Maps URL)', type: 'url' },
-    { key: 'facebook', label: 'Facebook URL', type: 'url' },
-    { key: 'youtube', label: 'YouTube URL (Optional - leave blank to hide)', type: 'url' },
+  const fieldGroups = [
+    {
+      title: 'Identity',
+      fields: [
+        { key: 'name', label: 'Name', type: 'text', help: 'Your name as it should appear on your card.' },
+        { key: 'business', label: 'Business', type: 'text', help: 'Your company or business name.' },
+        { key: 'role', label: 'Role', type: 'text', help: 'Your job title or the service you provide.' },
+        { key: 'eyebrow', label: 'Eyebrow text', type: 'text', help: 'A short line shown above your name, such as a specialty or tagline.' },
+      ],
+    },
+    {
+      title: 'Contact details',
+      fields: [
+        { key: 'phone', label: 'Phone', type: 'tel', help: 'The phone number customers can see on your card.' },
+        { key: 'email', label: 'Email', type: 'email', help: 'The email address customers can use to contact you.' },
+        { key: 'address', label: 'Address', type: 'text', help: 'Your business location or mailing address.' },
+        { key: 'address_link', label: 'Map link', type: 'url', help: 'Paste a Google Maps or other map link so customers can find you.' },
+      ],
+    },
   ];
+
+  const socialCustomLinks = customLinks
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.type !== 'payment');
+  const paymentCustomLinks = customLinks
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.type === 'payment');
 
   return (
     <>
       {/* Website Settings */}
+      {section === 'website' && (
       <div className="admin-card">
         <h3 className="admin-card-title">🌐 Website Settings</h3>
         <p className="admin-card-subtitle">Configure your browser tab title and site icon (favicon).</p>
 
         <div className="admin-form-row">
           <div className="admin-form-group">
-            <label className="admin-label" htmlFor="pf-site_title">Browser Tab Title</label>
+            <HelpLabel htmlFor="pf-site_title" help="The name shown in the browser tab when customers open your card.">Browser Tab Title</HelpLabel>
             <input
               id="pf-site_title"
               className="admin-input"
@@ -349,7 +649,7 @@ function ProfileTab({ showToast }) {
             />
           </div>
           <div className="admin-form-group">
-            <label className="admin-label">Site Icon (Favicon)</label>
+            <HelpLabel help="The small image shown beside your website name in browser tabs.">Site Icon (Favicon)</HelpLabel>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <div className="admin-image-preview" style={{ width: 48, height: 48, borderRadius: 8 }}>
                 {form.site_icon_url ? (
@@ -367,7 +667,7 @@ function ProfileTab({ showToast }) {
         </div>
 
         <div className="admin-form-group" style={{ marginTop: 12 }}>
-          <label className="admin-label" htmlFor="pf-custom_qr_url">Permanent QR Code Link (Optional)</label>
+          <HelpLabel htmlFor="pf-custom_qr_url" help="Optional: use a fixed website link for your QR code. Leave empty to use this card’s current web address.">Permanent QR Code Link (Optional)</HelpLabel>
           <input
             id="pf-custom_qr_url"
             className="admin-input"
@@ -383,10 +683,7 @@ function ProfileTab({ showToast }) {
 
         {/* Permanent Theme Selection */}
         <div className="admin-form-group" style={{ marginTop: 12 }}>
-          <label className="admin-label">Permanent Default Theme Color</label>
-          <p className="admin-card-subtitle" style={{ margin: '0 0 12px' }}>
-            Choose the card's default appearance. Light themes switch to Pitch Black when a visitor taps the theme control.
-          </p>
+          <HelpLabel help="Choose the appearance customers see when they first open your card.">Permanent Default Theme Color</HelpLabel>
           <div className="admin-theme-picker">
             {/* Dark */}
             <label className={`admin-theme-option ${(form.theme_mode || 'dark') === 'dark' ? 'selected' : ''}`}>
@@ -402,7 +699,6 @@ function ProfileTab({ showToast }) {
               </div>
               <div className="admin-theme-option-info">
                 <strong>Pitch Black</strong>
-                <span>Pure black & dark charcoal</span>
               </div>
             </label>
 
@@ -420,7 +716,6 @@ function ProfileTab({ showToast }) {
               </div>
               <div className="admin-theme-option-info">
                 <strong>Warm Beige</strong>
-                <span>Natural cream & warm tan</span>
               </div>
             </label>
 
@@ -438,7 +733,6 @@ function ProfileTab({ showToast }) {
               </div>
               <div className="admin-theme-option-info">
                 <strong>Crimson Red</strong>
-                <span>Bold ruby & deep burgundy</span>
               </div>
             </label>
 
@@ -456,7 +750,6 @@ function ProfileTab({ showToast }) {
               </div>
               <div className="admin-theme-option-info">
                 <strong>Royal Blue</strong>
-                <span>Electric blue & cobalt</span>
               </div>
             </label>
 
@@ -474,7 +767,6 @@ function ProfileTab({ showToast }) {
               </div>
               <div className="admin-theme-option-info">
                 <strong>Pure White</strong>
-                <span>Crisp black & pure white</span>
               </div>
             </label>
 
@@ -492,7 +784,6 @@ function ProfileTab({ showToast }) {
               </div>
               <div className="admin-theme-option-info">
                 <strong>Soft Lavender</strong>
-                <span>Lavender backdrop &amp; clean white cards</span>
               </div>
             </label>
 
@@ -510,7 +801,6 @@ function ProfileTab({ showToast }) {
               </div>
               <div className="admin-theme-option-info">
                 <strong>Emerald Green</strong>
-                <span>Lush forest & jade green</span>
               </div>
             </label>
           </div>
@@ -527,8 +817,11 @@ function ProfileTab({ showToast }) {
           </div>
         </div>
       </div>
+      )}
 
-      {/* Image Section */}
+      {/* Profile Section */}
+      {section === 'profile' && (
+      <>
       <div className="admin-card">
         <h3 className="admin-card-title">Profile Image</h3>
         <div className="admin-image-preview">
@@ -547,41 +840,30 @@ function ProfileTab({ showToast }) {
       {/* Info Section */}
       <div className="admin-card">
         <h3 className="admin-card-title">Profile Information</h3>
-
-        {/* Render paired rows */}
-        {Array.from({ length: Math.ceil(fields.length / 2) }, (_, i) => {
-          const left = fields[i * 2];
-          const right = fields[i * 2 + 1];
-          return (
-            <div className="admin-form-row" key={left.key}>
-              <div className="admin-form-group">
-                <label className="admin-label" htmlFor={`pf-${left.key}`}>{left.label}</label>
-                <input
-                  id={`pf-${left.key}`}
-                  className="admin-input"
-                  type={left.type}
-                  value={form[left.key] || ''}
-                  onChange={(e) => handleChange(left.key, e.target.value)}
-                />
-              </div>
-              {right && (
-                <div className="admin-form-group">
-                  <label className="admin-label" htmlFor={`pf-${right.key}`}>{right.label}</label>
+        <p className="admin-card-subtitle">Keep your contact details current so customers can reach you quickly.</p>
+        {fieldGroups.map((group) => (
+          <section className="admin-field-section" key={group.title}>
+            <h4 className="admin-field-section-title">{group.title}</h4>
+            <div className="admin-form-grid">
+              {group.fields.map((field) => (
+                <div className="admin-form-group" key={field.key}>
+                  <HelpLabel htmlFor={`pf-${field.key}`} help={field.help}>{field.label}</HelpLabel>
                   <input
-                    id={`pf-${right.key}`}
+                    id={`pf-${field.key}`}
                     className="admin-input"
-                    type={right.type}
-                    value={form[right.key] || ''}
-                    onChange={(e) => handleChange(right.key, e.target.value)}
+                    type={field.type}
+                    value={form[field.key] || ''}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                    placeholder={field.type === 'url' ? 'https://' : ''}
                   />
                 </div>
-              )}
+              ))}
             </div>
-          );
-        })}
+          </section>
+        ))}
 
         <div className="admin-form-group">
-          <label className="admin-label" htmlFor="pf-description">Description</label>
+          <HelpLabel htmlFor="pf-description" help="A short introduction to your business, products, or services.">Description</HelpLabel>
           <textarea
             id="pf-description"
             className="admin-textarea"
@@ -602,14 +884,17 @@ function ProfileTab({ showToast }) {
           </button>
         </div>
       </div>
+      </>
+      )}
 
       {/* Custom Social Media & Action Buttons */}
+      {section === 'social' && (
       <div className="admin-card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div>
-            <h3 className="admin-card-title" style={{ margin: 0 }}>Social Media & Custom Action Buttons</h3>
-            <p className="admin-card-desc" style={{ marginTop: 4, marginBottom: 0 }}>
-              Add TikTok, an extra Facebook page, Instagram, WhatsApp, or any other media link. These appear in the 3rd row of your card!
+        <div className="admin-social-card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div className="admin-social-card-copy">
+            <h3 className="admin-card-title admin-social-card-title" style={{ margin: 0 }}>Social Media & Custom Action Buttons</h3>
+            <p className="admin-card-desc admin-social-card-desc" style={{ marginTop: 4, marginBottom: 0 }}>
+              Manage Facebook, YouTube, and other social links together. Social links appear in their own card on your public page.
             </p>
           </div>
           <button
@@ -623,7 +908,7 @@ function ProfileTab({ showToast }) {
           </button>
         </div>
 
-        {customLinks.length === 0 ? (
+        {socialCustomLinks.length === 0 ? (
           <div className="admin-empty-custom-links" style={{ textAlign: 'center', padding: '24px 12px', border: '1px dashed var(--admin-border)', borderRadius: 8, color: 'var(--admin-text-muted)' }}>
             <i className="fa-brands fa-tiktok" style={{ fontSize: '1.8rem', opacity: 0.4, marginBottom: 8, display: 'block' }} />
             <p style={{ margin: 0, fontSize: '0.88rem' }}>No custom media buttons added yet.</p>
@@ -637,74 +922,65 @@ function ProfileTab({ showToast }) {
             </button>
           </div>
         ) : (
-          <div className="admin-custom-links-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {customLinks.map((item, index) => (
+          <div className="admin-custom-links-list admin-social-links-list">
+            {socialCustomLinks.map(({ item, index }, socialIndex) => (
               <div
                 key={item.id || index}
-                className="admin-custom-link-card"
-                style={{
-                  background: 'var(--admin-input-bg)',
-                  border: '1px solid var(--admin-border)',
-                  borderRadius: 8,
-                  padding: 14,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                }}
+                className="admin-custom-link-card admin-social-link-card"
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: '0.88rem', color: 'var(--admin-text-primary)' }}>
-                    <div style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      background: 'rgba(255,255,255,0.08)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'var(--admin-accent)',
-                      fontSize: '1rem',
-                    }}>
+                <div className="admin-social-link-heading">
+                  <div className="admin-social-link-name">
+                    <div className="admin-social-link-icon">
                       <i className={item.icon || 'fa-solid fa-globe'} aria-hidden="true" />
                     </div>
-                    <span>Button #{index + 1}: {item.label || 'Untitled Link'}</span>
+                    <span>Button #{socialIndex + 1}: {item.label || 'Untitled Link'}</span>
                   </div>
                   <button
                     type="button"
                     className="admin-btn admin-btn-sm admin-btn-danger"
-                    onClick={() => handleRemoveCustomLink(index)}
+                    onClick={() => requestRemoveCustomLink(index)}
                     title="Remove button"
                   >
                     <i className="fa-solid fa-trash" aria-hidden="true" /> Remove
                   </button>
                 </div>
 
-                <div className="admin-form-row" style={{ margin: 0 }}>
+                <div className="admin-form-row admin-social-fields-row">
                   <div className="admin-form-group" style={{ marginBottom: 0 }}>
-                    <label className="admin-label">Platform / Icon</label>
+                    <HelpLabel help="Choose the service this button will open, such as Facebook, WhatsApp, or TikTok.">Platform / Icon</HelpLabel>
                     <select
                       className="admin-input"
                       value={item.icon || 'fa-brands fa-tiktok'}
                       onChange={(e) => {
                         const newIcon = e.target.value;
                         handleUpdateCustomLink(index, 'icon', newIcon);
+                        if (newIcon.includes('youtube')) {
+                          handleUpdateCustomLink(index, 'label', 'YouTube');
+                          return;
+                        }
+                        if (newIcon.includes('facebook-messenger')) {
+                          handleUpdateCustomLink(index, 'label', 'Messenger');
+                          return;
+                        }
                         // Auto-set label if empty or previously default
                         if (!item.label || item.label === 'TikTok' || item.label === 'Facebook' || item.label === 'Instagram') {
                           if (newIcon.includes('tiktok')) handleUpdateCustomLink(index, 'label', 'TikTok');
+                          else if (newIcon === 'fa-solid fa-phone') handleUpdateCustomLink(index, 'label', 'Call');
                           else if (newIcon.includes('facebook')) handleUpdateCustomLink(index, 'label', 'FB Page 2');
                           else if (newIcon.includes('instagram')) handleUpdateCustomLink(index, 'label', 'Instagram');
                           else if (newIcon.includes('whatsapp')) handleUpdateCustomLink(index, 'label', 'WhatsApp');
                           else if (newIcon.includes('telegram')) handleUpdateCustomLink(index, 'label', 'Telegram');
-                          else if (newIcon.includes('youtube')) handleUpdateCustomLink(index, 'label', 'YouTube 2');
                           else if (newIcon.includes('linkedin')) handleUpdateCustomLink(index, 'label', 'LinkedIn');
                           else if (newIcon.includes('shopping') || newIcon.includes('bag')) handleUpdateCustomLink(index, 'label', 'Shop');
                         }
                       }}
                     >
+                      <option value="fa-solid fa-phone">☎️ Phone / Call</option>
                       <option value="fa-brands fa-tiktok">🎵 TikTok</option>
                       <option value="fa-brands fa-facebook-f">📘 Facebook Page / Group</option>
                       <option value="fa-brands fa-instagram">📸 Instagram</option>
                       <option value="fa-brands fa-youtube">🔴 YouTube</option>
+                      <option value="fa-brands fa-facebook-messenger">💬 Messenger</option>
                       <option value="fa-brands fa-whatsapp">💬 WhatsApp</option>
                       <option value="fa-brands fa-telegram">✈️ Telegram</option>
                       <option value="fa-brands fa-viber">🟣 Viber</option>
@@ -718,7 +994,7 @@ function ProfileTab({ showToast }) {
                   </div>
 
                   <div className="admin-form-group" style={{ marginBottom: 0 }}>
-                    <label className="admin-label">Button Label (Text on card)</label>
+                    <HelpLabel help="The short button name customers will see, such as “Instagram” or “Message us.”">Button Label (Text on card)</HelpLabel>
                     <input
                       className="admin-input"
                       type="text"
@@ -730,11 +1006,12 @@ function ProfileTab({ showToast }) {
                 </div>
 
                 <div className="admin-form-group" style={{ marginBottom: 0 }}>
-                  <label className="admin-label">Destination URL</label>
+                  <HelpLabel help="Paste the link to your profile or page. For a Call button, enter the phone number instead.">Destination URL</HelpLabel>
                   <input
                     className="admin-input"
-                    type="url"
-                    placeholder="https://www.tiktok.com/@youraccount or https://facebook.com/..."
+                    type="text"
+                    inputMode="url"
+                    placeholder={item.icon === 'fa-solid fa-phone' ? 'Phone number, e.g. +1 555 123 4567' : item.icon?.includes('facebook-messenger') ? 'm.me/yourPageName or a Messenger chat link' : 'https://www.tiktok.com/@youraccount or https://facebook.com/...'}
                     value={item.url || ''}
                     onChange={(e) => handleUpdateCustomLink(index, 'url', e.target.value)}
                   />
@@ -744,17 +1021,178 @@ function ProfileTab({ showToast }) {
           </div>
         )}
 
+        <div className="admin-save-bar">
+          {dirty && <span className="admin-unsaved">● Unsaved changes</span>}
+          <button
+            className="admin-btn admin-btn-primary"
+            onClick={() => handleSave(true)}
+            disabled={saving || !dirty}
+          >
+            {saving ? 'Saving…' : 'Save Social Buttons'}
+          </button>
+        </div>
+      </div>
+      )}
+
+      {/* Payment QR Buttons */}
+      {section === 'payments' && (
+      <div className="admin-card admin-payment-card">
+        <div className="admin-card-title">
+          Payment QR Buttons
+        </div>
+        <p className="admin-card-subtitle">Add payment QR codes customers can scan from your card.</p>
+        <div className="admin-payment-links">
+          <div className="admin-payment-heading">
+            <div>
+              <h4>Payment methods</h4>
+              <p>Upload a QR image or paste a public image URL. Tapping the payment button opens it for customers to scan.</p>
+            </div>
+            <button type="button" className="admin-btn admin-btn-sm admin-btn-primary" onClick={handleAddPaymentLink}>
+              <i className="fa-solid fa-plus" aria-hidden="true" /> Add Payment QR
+            </button>
+          </div>
+
+          {paymentCustomLinks.map(({ item, index }) => (
+            <div className="admin-payment-link-card" key={item.id || index}>
+              <div className="admin-payment-link-top">
+                <div className="admin-payment-preview">
+                  {item.qr_image_url
+                    ? <img src={item.qr_image_url} alt={`${item.label || 'Payment'} QR preview`} />
+                    : <i className="fa-solid fa-qrcode" aria-hidden="true" />}
+                </div>
+                <div className="admin-payment-fields">
+                  <div className="admin-form-row">
+                    <div className="admin-form-group">
+                      <HelpLabel help="Choose the payment service for this QR code, such as GCash, Maya, or PayPal.">Payment Platform / Icon</HelpLabel>
+                      <select
+                        className="admin-input"
+                        value={item.icon || 'gcash'}
+                        onChange={(event) => {
+                          const platform = event.target.value;
+                          handleUpdateCustomLink(index, 'icon', platform);
+                          if (!item.label || ['GCash', 'Maya', 'PayPal', 'Bank QR'].includes(item.label)) {
+                            const labels = { gcash: 'GCash', maya: 'Maya', paypal: 'PayPal', bank: 'Bank QR' };
+                            handleUpdateCustomLink(index, 'label', labels[platform]);
+                          }
+                        }}
+                      >
+                        <option value="gcash">GCash</option>
+                        <option value="maya">Maya</option>
+                        <option value="paypal">PayPal</option>
+                        <option value="bank">Bank QR / Transfer</option>
+                      </select>
+                    </div>
+                    <div className="admin-form-group">
+                      <HelpLabel help="The payment button name customers will see on your card.">Button Label</HelpLabel>
+                      <input
+                        className="admin-input"
+                        type="text"
+                        maxLength={32}
+                        value={item.label || ''}
+                        onChange={(event) => handleUpdateCustomLink(index, 'label', event.target.value)}
+                        placeholder="e.g. Pay via GCash"
+                      />
+                    </div>
+                  </div>
+                  <div className="admin-payment-upload-row">
+                    <label className="admin-btn admin-btn-sm admin-btn-outline">
+                      <i className="fa-solid fa-upload" aria-hidden="true" />
+                      {uploadingPaymentIndex === index ? 'Uploading…' : item.qr_image_url ? 'Replace QR Image' : 'Upload QR Image'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingPaymentIndex !== null}
+                        onChange={(event) => handlePaymentQrUpload(index, event)}
+                      />
+                    </label>
+                    <span>PNG, JPG, or WebP · 5 MB max</span>
+                  </div>
+                  <div className="admin-payment-url-field">
+                    <HelpLabel htmlFor={`payment-destination-${item.id || index}`} help="Optional: paste your payment or checkout link to let customers continue after viewing the QR code.">
+                      Optional payment destination link
+                    </HelpLabel>
+                    <input
+                      id={`payment-destination-${item.id || index}`}
+                      className="admin-input"
+                      type="url"
+                      inputMode="url"
+                      value={item.payment_url || ''}
+                      onChange={(event) => handleUpdateCustomLink(index, 'payment_url', event.target.value)}
+                      placeholder="https://payment-provider.com/checkout/..."
+                    />
+                    <small>When provided, customers will also see a “Proceed to payment” button below the QR code.</small>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-sm admin-btn-danger"
+                  onClick={() => requestRemoveCustomLink(index)}
+                  aria-label={`Remove ${item.label || 'payment'} QR button`}
+                >
+                  <i className="fa-solid fa-trash" aria-hidden="true" /> Remove
+                </button>
+              </div>
+            </div>
+          ))}
+          {paymentCustomLinks.length === 0 && (
+            <div className="admin-empty">
+              <div className="admin-empty-icon"><i className="fa-solid fa-qrcode" aria-hidden="true" /></div>
+              No payment QR buttons yet.
+            </div>
+          )}
+        </div>
+
         <div className="admin-save-bar" style={{ marginTop: 20 }}>
           {dirty && <span className="admin-unsaved">● Unsaved changes</span>}
           <button
             className="admin-btn admin-btn-primary"
-            onClick={handleSave}
+            onClick={() => handleSave(true)}
             disabled={saving || !dirty}
           >
-            {saving ? 'Saving…' : 'Save Social Buttons & Profile'}
+            {saving ? 'Saving…' : 'Save Payment QR Buttons'}
           </button>
         </div>
       </div>
+      )}
+
+      {pendingLinkRemoval && (
+        <div className="admin-confirm-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPendingLinkRemoval(null);
+        }}>
+          <section
+            className="admin-confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="admin-remove-title"
+            aria-describedby="admin-remove-description"
+          >
+            <div className="admin-confirm-icon" aria-hidden="true">
+              <i className="fa-solid fa-trash" />
+            </div>
+            <h2 id="admin-remove-title">Remove this {pendingLinkRemoval.type === 'payment' ? 'payment QR' : 'button'}?</h2>
+            <p id="admin-remove-description">
+              <strong>{pendingLinkRemoval.label}</strong> will be removed from your card. You can save the change when you’re ready.
+            </p>
+            <div className="admin-confirm-actions">
+              <button
+                className="admin-btn admin-btn-outline"
+                type="button"
+                onClick={() => setPendingLinkRemoval(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="admin-btn admin-btn-danger"
+                type="button"
+                onClick={handleRemoveCustomLink}
+                autoFocus
+              >
+                <i className="fa-solid fa-trash" aria-hidden="true" /> Remove
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }
@@ -777,13 +1215,12 @@ function ProductsTab({ showToast }) {
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('products').select('*').order('sort_order');
+      const { data, error } = await supabase.from(productsTable).select('*').eq('site_id', siteId).order('sort_order');
       if (error) throw error;
       const list = data || [];
       setProducts(list);
       try {
         localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(list));
-        localStorage.setItem('nfc_card_products_cache', JSON.stringify(list));
       } catch (e) {}
     } catch (err) {
       showToast('Failed to load products: ' + err.message, 'error');
@@ -824,7 +1261,7 @@ function ProductsTab({ showToast }) {
     if (!file) return;
     setUploading(true);
     try {
-      const path = 'products/' + Date.now() + '_' + file.name;
+      const path = siteId + '/products/' + Date.now() + '_' + file.name;
       const { error: uploadError } = await supabase.storage.from('images').upload(path, file);
       if (uploadError) throw uploadError;
       const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
@@ -845,7 +1282,7 @@ function ProductsTab({ showToast }) {
     try {
       const urls = [];
       for (const file of files) {
-        const path = 'products/gallery/' + Date.now() + '_' + file.name;
+        const path = siteId + '/products/gallery/' + Date.now() + '_' + file.name;
         const { error: uploadError } = await supabase.storage.from('images').upload(path, file);
         if (uploadError) throw uploadError;
         const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
@@ -870,6 +1307,7 @@ function ProductsTab({ showToast }) {
     setSaving(true);
     try {
       const payload = {
+        site_id: siteId,
         name: productForm.name,
         description: productForm.description,
         price: productForm.price,
@@ -878,11 +1316,11 @@ function ProductsTab({ showToast }) {
         gallery: productForm.gallery || [],
       };
       if (editingProduct) {
-        const { error } = await supabase.from('products').update(payload).eq('id', editingProduct.id);
+        const { error } = await supabase.from(productsTable).update(payload).eq('id', editingProduct.id).eq('site_id', siteId);
         if (error) throw error;
         showToast('Product updated!', 'success');
       } else {
-        const { error } = await supabase.from('products').insert([payload]);
+        const { error } = await supabase.from(productsTable).insert([payload]);
         if (error) throw error;
         showToast('Product added!', 'success');
       }
@@ -898,7 +1336,7 @@ function ProductsTab({ showToast }) {
   const handleDelete = async (product) => {
     if (!window.confirm('Delete "' + product.name + '"? This cannot be undone.')) return;
     try {
-      const { error } = await supabase.from('products').delete().eq('id', product.id);
+      const { error } = await supabase.from(productsTable).delete().eq('id', product.id).eq('site_id', siteId);
       if (error) throw error;
       showToast('Product deleted', 'success');
       await fetchProducts();
@@ -909,7 +1347,7 @@ function ProductsTab({ showToast }) {
 
   const toggleFeatured = async (product) => {
     try {
-      const { error } = await supabase.from('products').update({ is_featured: !product.is_featured }).eq('id', product.id);
+      const { error } = await supabase.from(productsTable).update({ is_featured: !product.is_featured }).eq('id', product.id).eq('site_id', siteId);
       if (error) throw error;
       await fetchProducts();
     } catch (err) {
@@ -961,17 +1399,17 @@ function ProductsTab({ showToast }) {
             <h4 className="admin-product-form-title">{editingProduct ? 'Edit Product' : 'New Product'}</h4>
 
             <div className="admin-form-group">
-              <label className="admin-label">Name</label>
+              <HelpLabel help="The name of the product or service customers will see.">Name</HelpLabel>
               <input className="admin-input" type="text" value={productForm.name} onChange={(e) => handleFormChange('name', e.target.value)} placeholder="Product name" />
             </div>
 
             <div className="admin-form-group">
-              <label className="admin-label">Price</label>
+              <HelpLabel help="Enter the price or a starting price. You can also write “Free” or “Contact for pricing.”">Price</HelpLabel>
               <input className="admin-input" type="text" value={productForm.price} onChange={(e) => handleFormChange('price', e.target.value)} placeholder="e.g. ₱500, Starting at ₱1,000, Free" />
             </div>
 
             <div className="admin-form-group">
-              <label className="admin-label">Description</label>
+              <HelpLabel help="Explain what the product or service includes. This appears in your shop.">Description</HelpLabel>
               <textarea className="admin-textarea" value={productForm.description} onChange={(e) => handleFormChange('description', e.target.value)} placeholder="Describe this product or service in detail..." rows={4} />
             </div>
 
@@ -983,14 +1421,14 @@ function ProductsTab({ showToast }) {
             </div>
 
             <div className="admin-form-group">
-              <label className="admin-label">Main Image</label>
+              <HelpLabel help="Choose the main photo customers will see for this product.">Main Image</HelpLabel>
               {productForm.image_url && <div className="admin-image-preview"><img src={productForm.image_url} alt="Product" /></div>}
               <div className="admin-file-input"><input type="file" accept="image/*" onChange={handleProductImage} ref={fileRef} /></div>
               {uploading && <div className="admin-uploading">Uploading…</div>}
             </div>
 
             <div className="admin-form-group">
-              <label className="admin-label">Gallery Images (multiple)</label>
+              <HelpLabel help="Add extra photos customers can browse for this product.">Gallery Images (multiple)</HelpLabel>
               {productForm.gallery && productForm.gallery.length > 0 && (
                 <div className="admin-gallery-grid">
                   {productForm.gallery.map((url, i) => (
@@ -1051,9 +1489,36 @@ function ProductsTab({ showToast }) {
    ============================================================ */
 function Admin() {
   const [session, setSession] = useState(undefined);
-  const [activeTab, setActiveTab] = useState('profile');
+  const [siteAccess, setSiteAccess] = useState(null);
+  const [accessError, setAccessError] = useState(false);
+  const [activeSection, setActiveSection] = useState('website');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [adminTheme, setAdminTheme] = useState(() => {
+    try {
+      return localStorage.getItem('nfc_admin_theme') === 'dark' ? 'dark' : 'light';
+    } catch (error) {
+      return 'light';
+    }
+  });
   const [toast, setToast] = useState(null);
   const [businessName, setBusinessName] = useState('');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nfc_admin_theme', adminTheme);
+    } catch (error) {
+      console.error('Unable to save admin appearance preference:', error);
+    }
+  }, [adminTheme]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setMobileNavOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [mobileNavOpen]);
 
   const showToast = useCallback((message, type = 'success') => {
     setToast({ message, type, key: Date.now() });
@@ -1076,8 +1541,30 @@ function Admin() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    setSiteAccess(null);
+    setAccessError(false);
+    if (!session) return () => { active = false; };
+
+    supabase.rpc('can_manage_site', { target_site_id: siteId })
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (active) setSiteAccess(data === true);
+      })
+      .catch((error) => {
+        console.error('Unable to verify client site access:', error);
+        if (active) {
+          setSiteAccess(false);
+          setAccessError(true);
+        }
+      });
+
+    return () => { active = false; };
+  }, [session]);
+
+  useEffect(() => {
     if (session) {
-      supabase.from('profiles').select('business, site_title, site_icon_url').limit(1).single().then(({ data }) => {
+      supabase.from(profilesTable).select('business, site_title, site_icon_url').eq('site_id', siteId).single().then(({ data }) => {
         if (data?.business) setBusinessName(data.business);
         if (data?.site_title) {
           applySiteTitle(data.site_title, true);
@@ -1093,28 +1580,121 @@ function Admin() {
 
   if (session === undefined) return <div className="admin-login"><div className="admin-spinner" /></div>;
   if (!session) return <><LoginForm />{toast && <Toast key={toast.key} message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}</>;
+  if (session.user.app_metadata?.force_password_change) {
+    return <RequiredPasswordChange session={session} onComplete={() => showToast('Password updated. Please continue to your site dashboard.', 'success')} />;
+  }
+  if (siteAccess === null) return <div className="admin-login"><div className="admin-spinner" /></div>;
+  if (!siteAccess) {
+    return (
+      <div className="admin-login">
+        <div className="admin-login-card">
+          <h1 className="admin-login-title">{accessError ? 'Access check unavailable' : 'Site access not assigned'}</h1>
+          <p className="admin-login-subtitle">
+            {accessError
+              ? 'We could not verify this account. The site owner must complete the secure access setup before you can manage this card.'
+              : 'This account is not authorized to manage this site. Please contact the site administrator.'}
+          </p>
+          <button className="admin-btn admin-btn-outline" type="button" onClick={() => supabase.auth.signOut()}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const sectionLabels = {
+    website: 'Website settings',
+    profile: 'Profile',
+    social: 'Social & buttons',
+    payments: 'Payment QR buttons',
+    products: 'Products',
+  };
 
   return (
-    <div className="admin-page">
+    <div className="admin-page" data-admin-theme={adminTheme}>
       <header className="admin-header">
         <div className="admin-header-left">
-          <a href="/">← Back to Card</a>
-          <span className="admin-header-title">Admin Dashboard{businessName && <span className="admin-header-business"> — {businessName}</span>}</span>
+          <button
+            className="admin-mobile-nav-toggle"
+            type="button"
+            aria-label={mobileNavOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={mobileNavOpen}
+            aria-controls="admin-sidebar-navigation"
+            onClick={() => setMobileNavOpen((open) => !open)}
+          >
+            <span className="admin-hamburger" aria-hidden="true"><span /><span /><span /></span>
+          </button>
+          <span className="admin-header-title">Card manager{businessName && <span className="admin-header-business"> · {businessName}</span>}</span>
         </div>
         <div className="admin-header-right">
+          <button
+            className="admin-btn admin-btn-sm admin-btn-outline admin-theme-toggle"
+            type="button"
+            onClick={() => setAdminTheme((theme) => theme === 'dark' ? 'light' : 'dark')}
+            aria-label={`Switch to ${adminTheme === 'dark' ? 'light' : 'dark'} mode`}
+            title={`Switch to ${adminTheme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            <i className={`fa-solid ${adminTheme === 'dark' ? 'fa-sun' : 'fa-moon'}`} aria-hidden="true" />
+            <span>{adminTheme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+          </button>
           <button className="admin-btn admin-btn-sm admin-btn-outline" onClick={() => supabase.auth.signOut()}>Logout</button>
         </div>
       </header>
 
-      <nav className="admin-tabs">
-        <button className={'admin-tab ' + (activeTab === 'profile' ? 'active' : '')} onClick={() => setActiveTab('profile')}>Profile</button>
-        <button className={'admin-tab ' + (activeTab === 'products' ? 'active' : '')} onClick={() => setActiveTab('products')}>Products</button>
-      </nav>
+      <div className="admin-workspace">
+        {mobileNavOpen && (
+          <button
+            className="admin-sidebar-backdrop"
+            type="button"
+            aria-label="Close navigation menu"
+            onClick={() => setMobileNavOpen(false)}
+          />
+        )}
+        <aside className={`admin-sidebar ${mobileNavOpen ? 'is-open' : ''}`} aria-label="Admin sections">
+          <p className="admin-sidebar-heading">WORKSPACE</p>
+          <nav id="admin-sidebar-navigation" className="admin-sidebar-nav">
+            <button className={`admin-sidebar-link ${activeSection === 'website' ? 'active' : ''}`} aria-current={activeSection === 'website' ? 'page' : undefined} onClick={() => { setActiveSection('website'); setMobileNavOpen(false); }}>
+              <i className="fa-solid fa-globe" aria-hidden="true" /><span>Website settings</span>
+            </button>
+            <button className={`admin-sidebar-link ${activeSection === 'profile' ? 'active' : ''}`} aria-current={activeSection === 'profile' ? 'page' : undefined} onClick={() => { setActiveSection('profile'); setMobileNavOpen(false); }}>
+              <i className="fa-solid fa-id-card" aria-hidden="true" /><span>Profile</span>
+            </button>
+            <button className={`admin-sidebar-link ${activeSection === 'social' ? 'active' : ''}`} aria-current={activeSection === 'social' ? 'page' : undefined} onClick={() => { setActiveSection('social'); setMobileNavOpen(false); }}>
+              <i className="fa-solid fa-share-nodes" aria-hidden="true" /><span>Social &amp; buttons</span>
+            </button>
+            <button className={`admin-sidebar-link ${activeSection === 'payments' ? 'active' : ''}`} aria-current={activeSection === 'payments' ? 'page' : undefined} onClick={() => { setActiveSection('payments'); setMobileNavOpen(false); }}>
+              <i className="fa-solid fa-qrcode" aria-hidden="true" /><span>Payment QR buttons</span>
+            </button>
+            <span className="admin-sidebar-divider" />
+            <button className={`admin-sidebar-link ${activeSection === 'products' ? 'active' : ''}`} aria-current={activeSection === 'products' ? 'page' : undefined} onClick={() => { setActiveSection('products'); setMobileNavOpen(false); }}>
+              <i className="fa-solid fa-box-open" aria-hidden="true" /><span>Products</span>
+            </button>
+          </nav>
+          <div className="admin-sidebar-footer">
+            <span className="admin-status"><span aria-hidden="true" /> Admin workspace</span>
+          </div>
+        </aside>
 
       <main className="admin-content">
-        {activeTab === 'profile' && <ProfileTab showToast={showToast} />}
-        {activeTab === 'products' && <ProductsTab showToast={showToast} />}
+        <div className="admin-page-intro">
+          <div>
+            <p className="admin-eyebrow">BUSINESS CARD</p>
+            <h1>{sectionLabels[activeSection]}</h1>
+            <p>{({
+              website: 'Set your card appearance, browser title, icon, and QR destination.',
+              profile: 'Manage your business identity and customer contact information.',
+              social: 'Choose which social and action buttons appear on your card.',
+              payments: 'Manage the QR codes and payment links customers can use.',
+              products: 'Organize featured items and products shown in your shop.',
+            })[activeSection]}</p>
+          </div>
+        </div>
+        <div hidden={activeSection === 'products'}>
+          <ProfileTab showToast={showToast} section={activeSection} />
+        </div>
+        {activeSection === 'products' && <ProductsTab showToast={showToast} />}
       </main>
+      </div>
 
       {toast && <Toast key={toast.key} message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
     </div>

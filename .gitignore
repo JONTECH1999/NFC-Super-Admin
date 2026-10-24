@@ -4,3 +4,4 @@ dist/
 .firebase/
 .env*
 !.env.example
+/supabase/.temp/

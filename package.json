@@ -6,6 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:aljon": "vite build --mode aljon",
+    "build:remo": "vite build --mode remo",
+    "deploy:aljon": "vite build --mode aljon && npx firebase-tools deploy --only hosting:aljon-contacts-hosting --project digital-callingcard",
+    "deploy:main": "vite build && npx firebase-tools deploy --only hosting:calling-card --project digital-callingcard",
+    "deploy:remo": "vite build --mode remo && npx firebase-tools deploy --only hosting:remo-contacts --project digital-callingcard",
+    "deploy:superadmin": "vite build && npx firebase-tools deploy --only hosting:superadmin-callingcard --project digital-callingcard",
     "preview": "vite preview"
   },
   "dependencies": {

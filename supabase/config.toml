@@ -1,0 +1,2 @@
+[functions.super-admin-sites]
+verify_jwt = true
