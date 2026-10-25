@@ -19,6 +19,13 @@ function formatAge(timestamp) {
 }
 
 function SuperAdmin() {
+  const [theme, setTheme] = useState(() => {
+    try {
+      return window.localStorage.getItem('superadmin-theme') === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
   const [session, setSession] = useState(undefined);
   const [authorized, setAuthorized] = useState(null);
   const [activePage, setActivePage] = useState(() => {
@@ -48,6 +55,14 @@ function SuperAdmin() {
   const [resetPassword, setResetPassword] = useState('');
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
   const [form, setForm] = useState({ site_id: '', name: '', public_url: '', client_email: '', password: '', confirm_password: '' });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('superadmin-theme', theme);
+    } catch (themeError) {
+      console.warn('Unable to save super-admin theme preference:', themeError);
+    }
+  }, [theme]);
 
   const navigateTo = (page) => {
     if (!Object.hasOwn(dashboardPages, page)) return;
@@ -444,17 +459,21 @@ function SuperAdmin() {
   const sitesRequiringAttention = siteOperationalSummary.filter((site) => site.issueCount > 0).length;
 
   if (session === undefined || (session && authorized === null)) {
-    return <main className="superadmin-loading"><span className="superadmin-spinner" aria-label="Loading" /></main>;
+    return <main className="superadmin-loading" data-theme={theme}><span className="superadmin-spinner" aria-label="Loading" /></main>;
   }
 
   if (!session) {
     return (
-      <main className="superadmin-login-wrap">
+      <main className="superadmin-login-wrap" data-theme={theme}>
         <form className="superadmin-login" onSubmit={handleLogin}>
           <div className="superadmin-brandmark" aria-hidden="true">S</div>
           <p className="superadmin-eyebrow">CONTROL CENTER</p>
           <h1>Super Admin</h1>
           <p className="superadmin-muted">Sign in with your owner account to manage all connected sites.</p>
+          <button className="superadmin-theme-toggle login-theme-toggle" type="button" onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+            <span aria-hidden="true">{theme === 'light' ? '☾' : '☀'}</span>
+            {theme === 'light' ? 'Dark mode' : 'Light mode'}
+          </button>
           {error && <div className="superadmin-alert error" role="alert">{error}</div>}
           <label>Email address<input name="email" type="email" autoComplete="username" required /></label>
           <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
@@ -466,11 +485,15 @@ function SuperAdmin() {
 
   if (!authorized) {
     return (
-      <main className="superadmin-login-wrap">
+      <main className="superadmin-login-wrap" data-theme={theme}>
         <section className="superadmin-login">
           <p className="superadmin-eyebrow">ACCESS RESTRICTED</p>
           <h1>Owner access required</h1>
           <p className="superadmin-muted">This account is not authorized to administer sites. Sign in with the owner account assigned in the Supabase super_admins table.</p>
+          <button className="superadmin-theme-toggle login-theme-toggle" type="button" onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+            <span aria-hidden="true">{theme === 'light' ? '☾' : '☀'}</span>
+            {theme === 'light' ? 'Dark mode' : 'Light mode'}
+          </button>
           {error && <div className="superadmin-alert error" role="alert">{error}</div>}
           <button className="superadmin-secondary" type="button" onClick={() => supabase.auth.signOut()}>Sign out</button>
         </section>
@@ -479,7 +502,7 @@ function SuperAdmin() {
   }
 
   return (
-    <main className="superadmin-shell">
+    <main className="superadmin-shell" data-theme={theme}>
       <aside className={`superadmin-sidebar${mobileMenuOpen ? ' is-open' : ''}`}>
         <a className="superadmin-brand" href="#overview" aria-label="Site Control dashboard" onClick={(event) => { event.preventDefault(); navigateTo('overview'); }}>
           <span className="superadmin-brand-icon">N</span>
@@ -505,7 +528,13 @@ function SuperAdmin() {
             <button className="superadmin-mobile-menu" type="button" aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)}>{mobileMenuOpen ? '×' : '☰'}</button>
             <div><span className="superadmin-breadcrumb">Workspace</span><span className="superadmin-breadcrumb-separator">/</span><strong>{dashboardPages[activePage]}</strong></div>
           </div>
-          <span className="superadmin-topbar-status"><i /> Shared database connected</span>
+          <div className="superadmin-topbar-actions">
+            <button className="superadmin-theme-toggle" type="button" onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+              <span aria-hidden="true">{theme === 'light' ? '☾' : '☀'}</span>
+              <span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</span>
+            </button>
+            <span className="superadmin-topbar-status"><i /> Shared database connected</span>
+          </div>
         </header>
 
         <div className="superadmin-content">

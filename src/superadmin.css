@@ -2879,3 +2879,961 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.superadmin-shell {
+  --glass-line: rgba(255, 255, 255, 0.72);
+  --glass-shadow: 0 18px 48px rgba(43, 54, 73, 0.09), 0 2px 8px rgba(43, 54, 73, 0.04);
+  color: #252b38;
+  background:
+    radial-gradient(ellipse at 82% 2%, rgba(255, 255, 255, 0.94), transparent 35%),
+    radial-gradient(ellipse at 45% 75%, rgba(223, 232, 246, 0.68), transparent 40%),
+    linear-gradient(135deg, #edf1f7, #f7f4ed 55%, #e9eef5);
+}
+
+.superadmin-sidebar {
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(165deg, rgba(32, 37, 49, 0.96), rgba(27, 30, 39, 0.92));
+  box-shadow: 10px 0 40px rgba(34, 41, 54, 0.09);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.superadmin-brand-icon,
+.superadmin-nav a.selected,
+.superadmin-nav a:hover {
+  color: #322712;
+  background: linear-gradient(135deg, #e5c47a, #c69a43);
+  box-shadow: 0 5px 18px rgba(198, 154, 67, 0.22);
+}
+
+.superadmin-nav a {
+  min-height: 40px;
+  border: 1px solid transparent;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.superadmin-nav a:hover {
+  transform: translateX(2px);
+}
+
+.superadmin-topbar {
+  border-bottom-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: 0 8px 28px rgba(46, 57, 74, 0.035);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.superadmin-content {
+  padding-top: clamp(24px, 3vw, 40px);
+}
+
+.superadmin-page-heading h1 {
+  color: #202838;
+}
+
+.superadmin-metric-card,
+.superadmin-panel,
+.superadmin-site,
+.superadmin-overview-site,
+.superadmin-sites-summary article {
+  border-color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.61);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.superadmin-metric-card,
+.superadmin-site,
+.superadmin-overview-site,
+.superadmin-sites-summary article {
+  border-color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.superadmin-metric-card {
+  min-height: 112px;
+  border-radius: 16px;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.superadmin-metric-card:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 22px 42px rgba(43, 54, 73, 0.12);
+}
+
+.superadmin-metric-icon,
+.superadmin-site-mark {
+  border: 1px solid rgba(198, 154, 67, 0.12);
+  border-radius: 10px;
+  background: rgba(226, 198, 135, 0.24);
+}
+
+.superadmin-panel {
+  border-radius: 18px;
+  box-shadow: var(--glass-shadow);
+}
+
+.superadmin-site {
+  border-radius: 15px;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.superadmin-site:hover {
+  transform: translateY(-2px);
+  border-color: rgba(190, 151, 75, 0.32);
+  box-shadow: 0 20px 40px rgba(43, 54, 73, 0.12);
+}
+
+.superadmin-overview-site {
+  border-radius: 12px;
+}
+
+.superadmin-primary,
+.superadmin-manage-link {
+  border: 1px solid rgba(151, 109, 36, 0.16);
+  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(135deg, #b78b3f, #94702f);
+  box-shadow: 0 5px 14px rgba(151, 109, 36, 0.14);
+  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+}
+
+.superadmin-primary:hover:not(:disabled),
+.superadmin-manage-link:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+  box-shadow: 0 8px 20px rgba(151, 109, 36, 0.22);
+}
+
+.superadmin-secondary,
+.superadmin-danger {
+  min-height: 34px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.58);
+  transition: transform 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.superadmin-secondary:hover:not(:disabled),
+.superadmin-danger:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 6px 16px rgba(43, 54, 73, 0.08);
+}
+
+.superadmin-form input,
+.superadmin-form select,
+.superadmin-form textarea,
+.superadmin-login input,
+.superadmin-sites-toolbar input,
+.superadmin-sites-toolbar select,
+.superadmin-review-payload,
+.superadmin-review-reason textarea {
+  border-color: rgba(118, 130, 150, 0.25);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+.superadmin-form input:focus,
+.superadmin-form select:focus,
+.superadmin-form textarea:focus,
+.superadmin-login input:focus,
+.superadmin-sites-toolbar input:focus,
+.superadmin-sites-toolbar select:focus,
+.superadmin-review-reason textarea:focus {
+  border-color: rgba(166, 123, 49, 0.66);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(198, 154, 67, 0.13);
+}
+
+.superadmin-login {
+  border-color: rgba(255, 255, 255, 0.78);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 24px 80px rgba(43, 54, 73, 0.16);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+}
+
+.superadmin-login-wrap,
+.superadmin-loading {
+  color: #252b38;
+  background:
+    radial-gradient(ellipse at 76% 10%, rgba(255, 255, 255, 0.94), transparent 38%),
+    linear-gradient(135deg, #edf1f7, #f7f4ed 58%, #e9eef5);
+}
+
+.superadmin-login h1 {
+  color: #202838;
+}
+
+.superadmin-login .superadmin-eyebrow {
+  color: #8e6727;
+}
+
+.superadmin-login .superadmin-muted,
+.superadmin-login label {
+  color: #626d7d;
+}
+
+.superadmin-login input {
+  color: #252a32;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.superadmin-modal-backdrop {
+  background: rgba(30, 37, 50, 0.38);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.superadmin-modal-backdrop .superadmin-login,
+.superadmin-publish-modal {
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  border-radius: 20px;
+  background: rgba(250, 251, 253, 0.91);
+  box-shadow: 0 30px 90px rgba(22, 29, 41, 0.24);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.superadmin-mobile-menu {
+  border-color: rgba(255, 255, 255, 0.84);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 4px 14px rgba(43, 54, 73, 0.08);
+}
+
+.superadmin-sidebar-backdrop {
+  background: rgba(25, 31, 42, 0.42);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.superadmin-site-actions button,
+.superadmin-site-actions a,
+.superadmin-editor-actions button {
+  min-height: 38px;
+}
+
+.superadmin-site-operational {
+  gap: 12px;
+}
+
+.superadmin-alert,
+.superadmin-hosting-info,
+.superadmin-credential {
+  border-radius: 13px;
+  box-shadow: 0 10px 28px rgba(43, 54, 73, 0.07);
+}
+
+.superadmin-empty {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.superadmin-primary:focus-visible,
+.superadmin-secondary:focus-visible,
+.superadmin-danger:focus-visible,
+.superadmin-manage-link:focus-visible,
+.superadmin-mobile-menu:focus-visible,
+.superadmin-nav a:focus-visible {
+  outline: 3px solid rgba(166, 123, 49, 0.62);
+  outline-offset: 3px;
+}
+
+@media (max-width: 1100px) {
+  .superadmin-shell {
+    grid-template-columns: 208px minmax(0, 1fr);
+  }
+
+  .superadmin-content {
+    padding-right: clamp(16px, 2.5vw, 26px);
+    padding-left: clamp(16px, 2.5vw, 26px);
+  }
+}
+
+@media (max-width: 900px) {
+  .superadmin-shell {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+
+  .superadmin-metrics,
+  .superadmin-sites-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .superadmin-dashboard-panels,
+  .superadmin-site-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .superadmin-sites-toolbar {
+    grid-template-columns: minmax(0, 1fr) repeat(2, minmax(125px, 0.55fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .superadmin-sidebar {
+    background: rgba(31, 35, 46, 0.96);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+
+  .superadmin-topbar {
+    background: rgba(250, 251, 253, 0.78);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .superadmin-content {
+    padding-top: 23px;
+  }
+}
+
+@media (max-width: 580px) {
+  .superadmin-content {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .superadmin-page-heading {
+    align-items: flex-start;
+  }
+
+  .superadmin-metric-card {
+    min-height: 98px;
+    border-radius: 14px;
+  }
+
+  .superadmin-panel {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .superadmin-site {
+    border-radius: 13px;
+  }
+
+  .superadmin-sites-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .superadmin-site-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .superadmin-modal-backdrop {
+    align-items: end;
+    padding: 10px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
+  .superadmin-modal-backdrop .superadmin-login,
+  .superadmin-publish-modal {
+    max-height: min(90dvh, 760px);
+    overflow-y: auto;
+    border-radius: 22px 22px 14px 14px;
+  }
+}
+
+@media (max-width: 370px) {
+  .superadmin-topbar-status {
+    max-width: 94px;
+    font-size: 0.56rem;
+  }
+
+  .superadmin-metrics,
+  .superadmin-sites-summary {
+    gap: 7px;
+  }
+
+  .superadmin-metric-card {
+    grid-template-columns: 24px minmax(0, 1fr);
+    column-gap: 6px;
+    padding: 8px;
+  }
+
+  .superadmin-metric-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .superadmin-site-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .superadmin-nav a,
+  .superadmin-site,
+  .superadmin-metric-card,
+  .superadmin-primary,
+  .superadmin-secondary,
+  .superadmin-danger,
+  .superadmin-manage-link {
+    transition: none;
+  }
+}
+
+.superadmin-shell[data-theme="light"],
+.superadmin-login-wrap[data-theme="light"],
+.superadmin-loading[data-theme="light"] {
+  --theme-text: #1e293b;
+  --theme-muted: #64748b;
+  --theme-line: #dbe3ed;
+  --theme-surface: rgba(255, 255, 255, 0.88);
+  --theme-surface-raised: #fff;
+  --theme-field: #fff;
+  --theme-accent: #2563eb;
+  --theme-accent-strong: #1d4ed8;
+  color: var(--theme-text);
+  background:
+    radial-gradient(ellipse at 82% 2%, rgba(255, 255, 255, 0.96), transparent 36%),
+    linear-gradient(135deg, #f1f5f9, #f8fafc 58%, #eaf0f7);
+}
+
+.superadmin-shell[data-theme="dark"],
+.superadmin-login-wrap[data-theme="dark"],
+.superadmin-loading[data-theme="dark"] {
+  --theme-text: #e2e8f0;
+  --theme-muted: #9aaabe;
+  --theme-line: #334155;
+  --theme-surface: rgba(30, 41, 59, 0.88);
+  --theme-surface-raised: #1e293b;
+  --theme-field: #111c2d;
+  --theme-accent: #7aa7ff;
+  --theme-accent-strong: #4f83ed;
+  color: var(--theme-text);
+  background:
+    radial-gradient(ellipse at 82% 2%, rgba(51, 65, 85, 0.42), transparent 36%),
+    linear-gradient(135deg, #0b1220, #111827 58%, #131d2b);
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-sidebar {
+  border-right-color: var(--theme-line);
+  color: #334155;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 8px 0 32px rgba(15, 23, 42, 0.04);
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-nav a,
+.superadmin-shell[data-theme="light"] .superadmin-nav-label,
+.superadmin-shell[data-theme="light"] .superadmin-account,
+.superadmin-shell[data-theme="light"] .superadmin-breadcrumb,
+.superadmin-shell[data-theme="light"] .superadmin-breadcrumb-separator {
+  color: #64748b;
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-nav a.selected,
+.superadmin-shell[data-theme="light"] .superadmin-nav a:hover,
+.superadmin-shell[data-theme="light"] .superadmin-brand-icon {
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 5px 16px rgba(37, 99, 235, 0.2);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-sidebar {
+  border-right-color: #29384c;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.94);
+  box-shadow: 10px 0 40px rgba(0, 0, 0, 0.16);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-nav a,
+.superadmin-shell[data-theme="dark"] .superadmin-nav-label,
+.superadmin-shell[data-theme="dark"] .superadmin-account,
+.superadmin-shell[data-theme="dark"] .superadmin-breadcrumb,
+.superadmin-shell[data-theme="dark"] .superadmin-breadcrumb-separator,
+.superadmin-shell[data-theme="dark"] .superadmin-muted,
+.superadmin-shell[data-theme="dark"] .superadmin-intro p,
+.superadmin-shell[data-theme="dark"] .superadmin-topbar-status {
+  color: var(--theme-muted);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-nav a.selected,
+.superadmin-shell[data-theme="dark"] .superadmin-nav a:hover,
+.superadmin-shell[data-theme="dark"] .superadmin-brand-icon {
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 5px 18px rgba(37, 99, 235, 0.25);
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-topbar {
+  border-bottom-color: rgba(203, 213, 225, 0.8);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-topbar {
+  border-bottom-color: rgba(51, 65, 85, 0.82);
+  background: rgba(15, 23, 42, 0.78);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-page-heading h1,
+.superadmin-login-wrap[data-theme="light"] .superadmin-login h1 {
+  color: #1e293b;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-page-heading h1,
+.superadmin-shell[data-theme="dark"] .superadmin-intro h2,
+.superadmin-shell[data-theme="dark"] .superadmin-panel-heading h2,
+.superadmin-shell[data-theme="dark"] .superadmin-site h3,
+.superadmin-login-wrap[data-theme="dark"] .superadmin-login h1 {
+  color: #f1f5f9;
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-eyebrow,
+.superadmin-login-wrap[data-theme="light"] .superadmin-eyebrow {
+  color: #2563eb;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-eyebrow,
+.superadmin-login-wrap[data-theme="dark"] .superadmin-eyebrow {
+  color: #8db5ff;
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-metric-card,
+.superadmin-shell[data-theme="light"] .superadmin-panel,
+.superadmin-shell[data-theme="light"] .superadmin-site,
+.superadmin-shell[data-theme="light"] .superadmin-overview-site,
+.superadmin-shell[data-theme="light"] .superadmin-sites-summary article,
+.superadmin-shell[data-theme="light"] .superadmin-stat {
+  border-color: rgba(203, 213, 225, 0.78);
+  color: #1e293b;
+  background: var(--theme-surface);
+  box-shadow: 0 14px 38px rgba(15, 23, 42, 0.055);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-metric-card,
+.superadmin-shell[data-theme="dark"] .superadmin-panel,
+.superadmin-shell[data-theme="dark"] .superadmin-site,
+.superadmin-shell[data-theme="dark"] .superadmin-overview-site,
+.superadmin-shell[data-theme="dark"] .superadmin-sites-summary article,
+.superadmin-shell[data-theme="dark"] .superadmin-stat,
+.superadmin-shell[data-theme="dark"] .superadmin-editor-panel,
+.superadmin-shell[data-theme="dark"] .superadmin-editor-section,
+.superadmin-shell[data-theme="dark"] .superadmin-editor-product,
+.superadmin-shell[data-theme="dark"] .superadmin-request-review-card {
+  border-color: rgba(71, 85, 105, 0.78);
+  color: var(--theme-text);
+  background: var(--theme-surface);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.16);
+}
+
+.superadmin-shell[data-theme="dark"] :is(
+  .superadmin-panel-heading,
+  .superadmin-dashboard-row,
+  .superadmin-site-titleline,
+  .superadmin-site-details,
+  .superadmin-client-line,
+  .superadmin-client-summary,
+  .superadmin-dashboard-list,
+  .superadmin-editor-heading,
+  .superadmin-editor-product-heading,
+  .superadmin-editor-products-heading,
+  .superadmin-request-review-heading,
+  .superadmin-review-change-title,
+  .superadmin-review-link-heading,
+  .superadmin-publish-modal-heading
+) {
+  color: var(--theme-text);
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-metric-icon,
+.superadmin-shell[data-theme="light"] .superadmin-site-mark {
+  border-color: rgba(37, 99, 235, 0.12);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-metric-icon,
+.superadmin-shell[data-theme="dark"] .superadmin-site-mark {
+  border-color: rgba(122, 167, 255, 0.2);
+  color: #a9c6ff;
+  background: rgba(59, 130, 246, 0.17);
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-primary,
+.superadmin-shell[data-theme="light"] .superadmin-manage-link,
+.superadmin-login-wrap[data-theme="light"] .superadmin-primary {
+  border-color: #2563eb;
+  color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 5px 14px rgba(37, 99, 235, 0.16);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-primary,
+.superadmin-shell[data-theme="dark"] .superadmin-manage-link,
+.superadmin-login-wrap[data-theme="dark"] .superadmin-primary {
+  border-color: #4f83ed;
+  color: #fff;
+  background: linear-gradient(135deg, #4f83ed, #3566cf);
+  box-shadow: 0 5px 14px rgba(37, 99, 235, 0.2);
+}
+
+.superadmin-shell[data-theme="light"] .superadmin-secondary,
+.superadmin-shell[data-theme="light"] .superadmin-danger,
+.superadmin-shell[data-theme="light"] .superadmin-mobile-menu,
+.superadmin-login-wrap[data-theme="light"] .superadmin-secondary {
+  border-color: var(--theme-line);
+  color: #334155;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-secondary,
+.superadmin-shell[data-theme="dark"] .superadmin-danger,
+.superadmin-shell[data-theme="dark"] .superadmin-mobile-menu,
+.superadmin-login-wrap[data-theme="dark"] .superadmin-secondary {
+  border-color: #475569;
+  color: #dbe5f2;
+  background: rgba(30, 41, 59, 0.82);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-danger {
+  border-color: rgba(248, 113, 113, 0.42);
+  color: #fca5a5;
+}
+
+.superadmin-shell[data-theme="light"] :is(
+  .superadmin-form input,
+  .superadmin-form select,
+  .superadmin-form textarea,
+  .superadmin-login input,
+  .superadmin-sites-toolbar input,
+  .superadmin-sites-toolbar select,
+  .superadmin-review-payload,
+  .superadmin-review-reason textarea,
+  .superadmin-json-editor
+),
+.superadmin-login-wrap[data-theme="light"] .superadmin-login input {
+  border-color: #cbd5e1;
+  color: #1e293b;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.superadmin-shell[data-theme="dark"] :is(
+  .superadmin-form input,
+  .superadmin-form select,
+  .superadmin-form textarea,
+  .superadmin-login input,
+  .superadmin-sites-toolbar input,
+  .superadmin-sites-toolbar select,
+  .superadmin-review-payload,
+  .superadmin-review-reason textarea,
+  .superadmin-json-editor
+),
+.superadmin-login-wrap[data-theme="dark"] .superadmin-login input {
+  border-color: #475569;
+  color: #e2e8f0;
+  background: var(--theme-field);
+  color-scheme: dark;
+}
+
+.superadmin-shell[data-theme="dark"] :is(
+  .superadmin-form label,
+  .superadmin-login label,
+  .superadmin-editor-fields label,
+  .superadmin-sites-toolbar label
+) {
+  color: #cbd5e1;
+}
+
+.superadmin-shell[data-theme="light"] :is(
+  .superadmin-form input,
+  .superadmin-form select,
+  .superadmin-form textarea,
+  .superadmin-login input,
+  .superadmin-sites-toolbar input,
+  .superadmin-sites-toolbar select,
+  .superadmin-review-reason textarea
+):focus,
+.superadmin-login-wrap[data-theme="light"] .superadmin-login input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+}
+
+.superadmin-shell[data-theme="dark"] :is(
+  .superadmin-form input,
+  .superadmin-form select,
+  .superadmin-form textarea,
+  .superadmin-login input,
+  .superadmin-sites-toolbar input,
+  .superadmin-sites-toolbar select,
+  .superadmin-review-reason textarea
+):focus,
+.superadmin-login-wrap[data-theme="dark"] .superadmin-login input:focus {
+  border-color: #7aa7ff;
+  box-shadow: 0 0 0 4px rgba(122, 167, 255, 0.15);
+}
+
+.superadmin-login-wrap[data-theme="light"] .superadmin-login {
+  border-color: rgba(203, 213, 225, 0.84);
+  color: var(--theme-text);
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.superadmin-login-wrap[data-theme="dark"] .superadmin-login {
+  border-color: #334155;
+  color: var(--theme-text);
+  background: rgba(30, 41, 59, 0.92);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+}
+
+.superadmin-login-wrap[data-theme="dark"] .superadmin-login .superadmin-muted,
+.superadmin-login-wrap[data-theme="dark"] .superadmin-login label {
+  color: #aab8ca;
+}
+
+.superadmin-theme-toggle {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  color: #334155;
+  background: rgba(255, 255, 255, 0.78);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease;
+}
+
+.superadmin-theme-toggle:hover {
+  border-color: #93b4ec;
+  background: #fff;
+}
+
+.superadmin-theme-toggle span[aria-hidden="true"] {
+  color: #2563eb;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.superadmin-theme-toggle:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.38);
+  outline-offset: 2px;
+}
+
+.superadmin-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.superadmin-login-wrap[data-theme="dark"] .superadmin-theme-toggle,
+.superadmin-shell[data-theme="dark"] .superadmin-theme-toggle {
+  border-color: #475569;
+  color: #dbe5f2;
+  background: rgba(30, 41, 59, 0.82);
+}
+
+.superadmin-login-wrap[data-theme="dark"] .superadmin-theme-toggle:hover,
+.superadmin-shell[data-theme="dark"] .superadmin-theme-toggle:hover {
+  border-color: #7aa7ff;
+  background: #26364d;
+}
+
+.superadmin-login-wrap[data-theme="dark"] .superadmin-theme-toggle span[aria-hidden="true"],
+.superadmin-shell[data-theme="dark"] .superadmin-theme-toggle span[aria-hidden="true"] {
+  color: #9fc0ff;
+}
+
+.superadmin-login-wrap .login-theme-toggle {
+  align-self: flex-start;
+  margin-bottom: 3px;
+}
+
+.superadmin-shell[data-theme="dark"] :is(
+  .superadmin-editor-link,
+  .superadmin-review-link-card,
+  .superadmin-review-change,
+  .superadmin-review-links,
+  .superadmin-review-payment-content,
+  .superadmin-review-qr-placeholder,
+  .superadmin-review-values,
+  .superadmin-publish-change,
+  .superadmin-publish-change-group,
+  .superadmin-draft-status,
+  .superadmin-empty
+) {
+  border-color: #475569;
+  color: var(--theme-text);
+  background: rgba(15, 23, 42, 0.48);
+}
+
+.superadmin-shell[data-theme="dark"] :is(
+  .superadmin-section-note,
+  .superadmin-form-note,
+  .superadmin-editor-payment-note,
+  .superadmin-review-links-empty,
+  .superadmin-operational-item small,
+  .superadmin-operational-item time,
+  .superadmin-site-url,
+  .superadmin-footer,
+  .superadmin-email-followup,
+  .superadmin-review-link-destination,
+  .superadmin-review-link-url
+) {
+  color: var(--theme-muted);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-operational-item strong,
+.superadmin-shell[data-theme="dark"] .superadmin-operational-item strong.not-monitored {
+  color: #dbe5f2;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-site-operational {
+  border-top-color: #334155;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-modal-backdrop,
+.superadmin-shell[data-theme="dark"] .superadmin-publish-modal-backdrop {
+  background: rgba(2, 6, 15, 0.72);
+}
+
+.superadmin-shell[data-theme="dark"] :is(
+  .superadmin-modal-backdrop .superadmin-login,
+  .superadmin-publish-modal,
+  .superadmin-review-modal
+) {
+  border-color: #475569;
+  color: var(--theme-text);
+  background: rgba(30, 41, 59, 0.97);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.48);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-hosting-info {
+  border-color: #725b2d;
+  color: #e5d6b4;
+  background: rgba(91, 68, 25, 0.22);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-hosting-info strong {
+  color: #fff0cf;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-alert.error,
+.superadmin-shell[data-theme="dark"] .superadmin-publish-unpaid-warning {
+  border-color: rgba(248, 113, 113, 0.38);
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.28);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-alert.success {
+  border-color: rgba(74, 222, 128, 0.34);
+  color: #bbf7d0;
+  background: rgba(20, 83, 45, 0.28);
+}
+
+@media (max-width: 760px) {
+  .superadmin-topbar-actions {
+    gap: 8px;
+  }
+
+  .superadmin-theme-toggle {
+    padding-right: 9px;
+    padding-left: 9px;
+  }
+}
+
+@media (max-width: 430px) {
+  .superadmin-topbar-actions {
+    gap: 6px;
+  }
+
+  .superadmin-topbar-status {
+    display: none;
+  }
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-sites-summary span {
+  color: #b6c3d4;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-sites-summary strong {
+  color: #f1f5f9;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-sites-summary article > button {
+  color: #9fc0ff;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-sites-summary article > button:hover {
+  color: #c5d8ff;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-site code {
+  color: #aebdd0;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-client-summary {
+  border-top-color: #3a4a60;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-client-summary small,
+.superadmin-shell[data-theme="dark"] .superadmin-operational-item small {
+  color: #aab9cc;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-client-summary span {
+  color: #e2e8f0;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-client-summary em {
+  color: #f0c674;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-client-summary em.enabled {
+  color: #86ddb1;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-site-actions {
+  border-top-color: #3a4a60;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-status {
+  color: #f5cf7c;
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-status.active {
+  color: #9ae6b8;
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-readiness {
+  color: #a7edc1;
+  background: rgba(34, 197, 94, 0.17);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-readiness.paused,
+.superadmin-shell[data-theme="dark"] .superadmin-readiness.needs-setup,
+.superadmin-shell[data-theme="dark"] .superadmin-readiness.payment-required {
+  color: #f4d28e;
+  background: rgba(245, 158, 11, 0.18);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-readiness.ready-to-publish {
+  color: #b8d5f5;
+  background: rgba(96, 165, 250, 0.17);
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-config-warning {
+  color: #f0c674;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-metric-card div span,
+.superadmin-shell[data-theme="dark"] .superadmin-metric-card > small {
+  color: #b6c3d4;
+}
+
+.superadmin-shell[data-theme="dark"] .superadmin-metric-card div strong {
+  color: #f1f5f9;
+}
