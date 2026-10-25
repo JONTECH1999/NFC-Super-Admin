@@ -1,23 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
+import SuperAdminSiteEditor from './SuperAdminSiteEditor';
 import './superadmin.css';
-
-function getSiteAdminUrl(site) {
-  try {
-    const url = new URL(site.public_url);
-    url.pathname = '/admin';
-    url.searchParams.set('site_id', site.site_id);
-    return url.toString();
-  } catch {
-    return '';
-  }
-}
 
 const dashboardPages = {
   overview: 'Dashboard',
   sites: 'Connected sites',
   'add-site': 'Add a site',
 };
+
+function formatAge(timestamp) {
+  if (!timestamp) return '';
+  const elapsedMinutes = Math.max(0, Math.floor((Date.now() - new Date(timestamp).getTime()) / 60000));
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `${elapsedHours}h`;
+  return `${Math.floor(elapsedHours / 24)}d`;
+}
 
 function SuperAdmin() {
   const [session, setSession] = useState(undefined);
@@ -28,6 +27,13 @@ function SuperAdmin() {
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sites, setSites] = useState([]);
+  const [editingSiteId, setEditingSiteId] = useState('');
+  const [siteSearch, setSiteSearch] = useState('');
+  const [siteFilter, setSiteFilter] = useState('all');
+  const [siteSort, setSiteSort] = useState('attention');
+  const [showHostingInfo, setShowHostingInfo] = useState(false);
+  const [dashboardData, setDashboardData] = useState({ activity: [], requests: [] });
+  const [dashboardLoading, setDashboardLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
@@ -49,6 +55,12 @@ function SuperAdmin() {
     setActivePage(page);
     setMobileMenuOpen(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openSitesFilter = (filter) => {
+    setSiteSearch('');
+    setSiteFilter(filter);
+    navigateTo('sites');
   };
 
   useEffect(() => {
@@ -170,9 +182,37 @@ function SuperAdmin() {
     return () => { active = false; };
   }, [session]);
 
+  const loadDashboardData = useCallback(async () => {
+    setDashboardLoading(true);
+    try {
+      const data = await invoke({ action: 'get_dashboard_data' });
+      setDashboardData({ activity: data.activity || [], requests: data.requests || [] });
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, [invoke]);
+
   useEffect(() => {
-    if (authorized) loadSites();
-  }, [authorized, loadSites]);
+    if (authorized) {
+      loadSites();
+      loadDashboardData();
+    }
+  }, [authorized, loadSites, loadDashboardData]);
+
+  useEffect(() => {
+    if (!authorized) return undefined;
+    const refreshDashboard = () => {
+      if (document.visibilityState === 'visible') loadDashboardData();
+    };
+    window.addEventListener('focus', refreshDashboard);
+    document.addEventListener('visibilitychange', refreshDashboard);
+    return () => {
+      window.removeEventListener('focus', refreshDashboard);
+      document.removeEventListener('visibilitychange', refreshDashboard);
+    };
+  }, [authorized, loadDashboardData]);
 
   const handleCreateSite = async (event) => {
     event.preventDefault();
@@ -196,7 +236,7 @@ function SuperAdmin() {
       setCredential({ email: data.site.client_email, password: form.password });
       setNotice('Site and client login created. Share the password securely; it will not be shown again.');
       setForm({ site_id: '', name: '', public_url: '', client_email: '', password: '', confirm_password: '' });
-      await loadSites();
+      await Promise.all([loadSites(), loadDashboardData()]);
     } catch (createError) {
       setError(createError.message);
     } finally {
@@ -219,9 +259,25 @@ function SuperAdmin() {
       } else {
         setNotice(`${site.name} is now ${site.is_active ? 'paused' : 'active'}.`);
       }
-      await loadSites();
+      await Promise.all([loadSites(), loadDashboardData()]);
     } catch (actionError) {
       setError(actionError.message);
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const setSitePaymentStatus = async (site, paymentStatus) => {
+    setBusyAction(`payment:${site.site_id}`);
+    setError('');
+    setNotice('');
+    try {
+      await invoke({ action: 'set_payment_status', site_id: site.site_id, payment_status: paymentStatus });
+      const labels = { none: 'No payment follow-up', awaiting_payment: 'Awaiting payment', paid: 'Paid' };
+      setNotice(`${site.name} marked: ${labels[paymentStatus]}.`);
+      await Promise.all([loadSites(), loadDashboardData()]);
+    } catch (paymentError) {
+      setError(paymentError.message);
     } finally {
       setBusyAction('');
     }
@@ -251,7 +307,7 @@ function SuperAdmin() {
       setAssignEmail('');
       setAssignPassword('');
       setAssignPasswordConfirm('');
-      await loadSites();
+      await Promise.all([loadSites(), loadDashboardData()]);
     } catch (assignError) {
       setError(assignError.message);
     } finally {
@@ -281,6 +337,7 @@ function SuperAdmin() {
       setResetSite(null);
       setResetPassword('');
       setResetPasswordConfirm('');
+      await loadDashboardData();
     } catch (resetError) {
       setError(resetError.message);
     } finally {
@@ -319,6 +376,72 @@ function SuperAdmin() {
   const activeSiteCount = sites.filter((site) => site.is_active).length;
   const pausedSiteCount = sites.length - activeSiteCount;
   const clientCount = sites.filter((site) => site.client_user_id && site.client_enabled).length;
+  const sitesNeedingAttention = sites.map((site) => {
+    const issues = [];
+    if (!site.is_active) issues.push('Site paused');
+    if (site.missing_configuration?.length) issues.push(...site.missing_configuration);
+    if (!site.client_user_id) issues.push('Client not assigned');
+    else if (!site.client_enabled) issues.push('Client access revoked');
+    if (site.has_unpublished_draft && site.payment_status !== 'paid') issues.push('Draft waiting for payment');
+    if ((site.pending_request_count || 0) > 0) issues.push(`${site.pending_request_count} pending edit request(s)`);
+    let readiness;
+    if (!site.is_active) readiness = 'Paused';
+    else if (site.missing_configuration?.length) readiness = 'Needs setup';
+    else if (site.has_unpublished_draft && site.payment_status !== 'paid') readiness = 'Payment required';
+    else if (site.has_unpublished_draft) readiness = 'Ready to publish';
+    else readiness = 'Live';
+    return { ...site, issues: [...new Set(issues)], readiness };
+  }).filter((site) => site.issues.length > 0);
+  const paymentSites = sites.filter((site) => site.payment_status === 'awaiting_payment');
+  const unassignedSites = sites.filter((site) => !site.client_user_id);
+  const siteOperationalSummary = sites.map((site) => {
+    const missingConfiguration = site.missing_configuration || [];
+    const hasUnpublishedDraft = Boolean(site.has_unpublished_draft);
+    const issueCount = Number(!site.is_active)
+      + missingConfiguration.length
+      + Number(!site.client_user_id || !site.client_enabled)
+      + Number(site.payment_status !== 'paid' && hasUnpublishedDraft)
+      + Number((site.pending_request_count || 0) > 0);
+    let readiness;
+    if (!site.is_active) readiness = 'Paused';
+    else if (missingConfiguration.length) readiness = 'Needs setup';
+    else if (hasUnpublishedDraft && site.payment_status !== 'paid') readiness = 'Payment required';
+    else if (hasUnpublishedDraft) readiness = 'Ready to publish';
+    else readiness = 'Live';
+    return { ...site, readiness, issueCount };
+  });
+  const visibleSites = siteOperationalSummary
+    .filter((site) => {
+      const query = siteSearch.trim().toLowerCase();
+      const matchesSearch = !query || [
+        site.name,
+        site.site_id,
+        site.client_email,
+        site.public_url,
+      ].some((value) => value?.toLowerCase().includes(query));
+      if (!matchesSearch) return false;
+      if (siteFilter === 'needs_attention') return site.issueCount > 0;
+      if (siteFilter === 'draft') return site.has_unpublished_draft;
+      if (siteFilter === 'unpaid') return site.payment_status !== 'paid';
+      if (siteFilter === 'paused') return !site.is_active;
+      if (siteFilter === 'unassigned') return !site.client_user_id;
+      if (siteFilter === 'requests') return site.pending_request_count > 0;
+      if (siteFilter === 'live') return site.readiness === 'Live';
+      return true;
+    })
+    .sort((a, b) => {
+      if (siteSort === 'name') return a.name.localeCompare(b.name);
+      if (siteSort === 'oldest_request') {
+        if (!a.oldest_pending_request_at) return b.oldest_pending_request_at ? 1 : a.name.localeCompare(b.name);
+        if (!b.oldest_pending_request_at) return -1;
+        return a.oldest_pending_request_at.localeCompare(b.oldest_pending_request_at);
+      }
+      if (siteSort === 'newest') return b.created_at.localeCompare(a.created_at);
+      return b.issueCount - a.issueCount || b.created_at.localeCompare(a.created_at);
+    });
+  const sitesWithUnpublishedChanges = sites.filter((site) => site.has_unpublished_draft).length;
+  const totalPendingRequests = sites.reduce((count, site) => count + (site.pending_request_count || 0), 0);
+  const sitesRequiringAttention = siteOperationalSummary.filter((site) => site.issueCount > 0).length;
 
   if (session === undefined || (session && authorized === null)) {
     return <main className="superadmin-loading"><span className="superadmin-spinner" aria-label="Loading" /></main>;
@@ -364,7 +487,7 @@ function SuperAdmin() {
         </a>
         <p className="superadmin-nav-label">WORKSPACE</p>
         <nav className="superadmin-nav" aria-label="Dashboard navigation">
-          <a className={activePage === 'overview' ? 'selected' : ''} aria-current={activePage === 'overview' ? 'page' : undefined} href="#overview" onClick={(event) => { event.preventDefault(); navigateTo('overview'); }}><span aria-hidden="true">▦</span> Overview</a>
+          <a className={activePage === 'overview' ? 'selected' : ''} aria-current={activePage === 'overview' ? 'page' : undefined} href="#overview" onClick={(event) => { event.preventDefault(); navigateTo('overview'); }}><span aria-hidden="true">▦</span> Dashboard</a>
           <a className={activePage === 'sites' ? 'selected' : ''} aria-current={activePage === 'sites' ? 'page' : undefined} href="#sites" onClick={(event) => { event.preventDefault(); navigateTo('sites'); }}><span aria-hidden="true">▤</span> Connected sites</a>
           <a className={activePage === 'add-site' ? 'selected' : ''} aria-current={activePage === 'add-site' ? 'page' : undefined} href="#add-site" onClick={(event) => { event.preventDefault(); navigateTo('add-site'); }}><span aria-hidden="true">＋</span> Add a site</a>
         </nav>
@@ -429,19 +552,175 @@ function SuperAdmin() {
                   </div>
                 )}
               </section>
+              <div className="superadmin-dashboard-panels">
+                <section className="superadmin-panel superadmin-dashboard-panel">
+                  <div className="superadmin-panel-heading">
+                    <div><p className="superadmin-eyebrow">ACTION REQUIRED</p><h2>Sites needing attention</h2><p className="superadmin-section-note">Paused sites and missing hosting or client configuration.</p></div>
+                    <span className="superadmin-panel-count">{sitesNeedingAttention.length}</span>
+                  </div>
+                  {sitesNeedingAttention.length === 0 ? <p className="superadmin-empty">All sites are active and configured.</p> : (
+                    <div className="superadmin-dashboard-list">
+                      {sitesNeedingAttention.map((site) => (
+                        <article className="superadmin-dashboard-row" key={site.site_id}>
+                          <div><strong>{site.name}</strong><small>{site.issues.join(' · ')}</small></div>
+                          <button className="superadmin-secondary" type="button" onClick={() => navigateTo('sites')}>Review</button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="superadmin-panel superadmin-dashboard-panel">
+                  <div className="superadmin-panel-heading">
+                    <div><p className="superadmin-eyebrow">PAYMENT FOLLOW-UP</p><h2>Pending to save</h2><p className="superadmin-section-note">Edited sites you marked as awaiting payment before upload.</p></div>
+                    <span className="superadmin-panel-count">{paymentSites.length}</span>
+                  </div>
+                  {paymentSites.length === 0 ? <p className="superadmin-empty">No sites are marked as awaiting payment. Set this manually from Connected sites.</p> : (
+                    <div className="superadmin-dashboard-list">
+                      {paymentSites.map((site) => (
+                        <article className="superadmin-dashboard-row" key={site.site_id}>
+                          <div><strong>{site.name}</strong><small>{site.client_email || 'No client assigned'} · Awaiting payment</small></div>
+                          <button className="superadmin-secondary" type="button" disabled={busyAction !== ''} onClick={() => setSitePaymentStatus(site, 'paid')}>{busyAction === `payment:${site.site_id}` ? 'Saving…' : 'Mark paid'}</button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="superadmin-panel superadmin-dashboard-panel">
+                  <div className="superadmin-panel-heading">
+                    <div><p className="superadmin-eyebrow">CLIENT SUPPORT</p><h2>Edit requests</h2><p className="superadmin-section-note">Client profile and product changes waiting for administrator review.</p></div>
+                    <span className="superadmin-panel-count">{dashboardData.requests.length}</span>
+                  </div>
+                  <p className="superadmin-request-link"><a href="/edit-request.html" target="_blank" rel="noreferrer">Open the client request form ↗</a></p>
+                  {dashboardLoading ? <p className="superadmin-muted">Loading requests…</p> : dashboardData.requests.length === 0 ? <p className="superadmin-empty">No pending client changes.</p> : (
+                    <div className="superadmin-dashboard-list">
+                      {dashboardData.requests.map((request) => {
+                        const site = sites.find((item) => item.site_id === request.site_id);
+                        const fields = request.request_type === 'products'
+                          ? 'Product changes'
+                          : Object.keys(request.payload || request.fields || {}).join(', ');
+                        return (
+                          <article className="superadmin-dashboard-row request" key={request.id}>
+                            <div><strong>{site?.name || request.site_id}</strong><small>{request.client_email} · {fields || 'Profile update'}</small><small>{new Date(request.created_at).toLocaleString()}</small>{request.notes && <p>{request.notes}</p>}</div>
+                            <button className="superadmin-secondary" type="button" disabled={busyAction !== ''} onClick={() => { setEditingSiteId(request.site_id); navigateTo('sites'); }}>Review in editor</button>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+
+                <section className="superadmin-panel superadmin-dashboard-panel">
+                  <div className="superadmin-panel-heading">
+                    <div><p className="superadmin-eyebrow">AUDIT TRAIL</p><h2>Recent admin activity</h2><p className="superadmin-section-note">Site and client-account changes made by super admins.</p></div>
+                    <button className="superadmin-secondary" type="button" onClick={loadDashboardData} disabled={dashboardLoading}>{dashboardLoading ? 'Refreshing…' : 'Refresh'}</button>
+                  </div>
+                  {dashboardLoading && dashboardData.activity.length === 0 ? <p className="superadmin-muted">Loading activity…</p> : dashboardData.activity.length === 0 ? <p className="superadmin-empty">No admin activity recorded yet.</p> : (
+                    <div className="superadmin-dashboard-list">
+                      {dashboardData.activity.map((item) => (
+                        <article className="superadmin-dashboard-row activity" key={item.id}>
+                          <div><strong>{item.description}</strong><small>{sites.find((site) => site.site_id === item.site_id)?.name || 'Workspace'} · {item.actor_email}</small></div>
+                          <time dateTime={item.created_at}>{new Date(item.created_at).toLocaleString()}</time>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                <section className="superadmin-panel superadmin-dashboard-panel">
+                  <div className="superadmin-panel-heading">
+                    <div><p className="superadmin-eyebrow">CLIENT ASSIGNMENT</p><h2>Unassigned sites</h2><p className="superadmin-section-note">Sites that have no client account assigned yet.</p></div>
+                    <span className="superadmin-panel-count">{unassignedSites.length}</span>
+                  </div>
+                  {unassignedSites.length === 0 ? <p className="superadmin-empty">Every site has a client assigned.</p> : (
+                    <div className="superadmin-dashboard-list">
+                      {unassignedSites.map((site) => (
+                        <article className="superadmin-dashboard-row" key={site.site_id}>
+                          <div><strong>{site.name}</strong><small>{site.site_id} · No client assigned</small></div>
+                          <button className="superadmin-secondary" type="button" onClick={() => navigateTo('sites')}>Assign</button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </div>
             </>
           )}
 
           {activePage === 'sites' && (
             <section className="superadmin-panel superadmin-sites-panel">
               <div className="superadmin-panel-heading">
-                <div><p className="superadmin-eyebrow">WORKSPACE</p><h2>Connected sites</h2><p className="superadmin-section-note">Review site status, client access, and management actions.</p></div>
+                <div><p className="superadmin-eyebrow">WORKSPACE</p><h2>Connected sites</h2><p className="superadmin-section-note">Review site readiness, unpublished content, client access, and pending work.</p></div>
                 <button className="superadmin-secondary" type="button" onClick={loadSites} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh list'}</button>
+              </div>
+              <div className="superadmin-sites-summary" aria-label="Site operations summary">
+                <article>
+                  <span>Needs attention</span>
+                  <strong>{sitesRequiringAttention}</strong>
+                  <button type="button" onClick={() => openSitesFilter('needs_attention')}>View affected sites</button>
+                </article>
+                <article>
+                  <span>Unpublished drafts</span>
+                  <strong>{sitesWithUnpublishedChanges}</strong>
+                  <button type="button" onClick={() => openSitesFilter('draft')}>View draft sites</button>
+                </article>
+                <article>
+                  <span>Pending requests</span>
+                  <strong>{totalPendingRequests}</strong>
+                  <button type="button" onClick={() => openSitesFilter('requests')}>View request sites</button>
+                </article>
+                <article>
+                  <span>Hosting health</span>
+                  <strong>Not monitored</strong>
+                  <button type="button" aria-expanded={showHostingInfo} onClick={() => setShowHostingInfo((visible) => !visible)}>
+                    {showHostingInfo ? 'Hide details' : 'What does this mean?'}
+                  </button>
+                </article>
+              </div>
+              {showHostingInfo && (
+                <div className="superadmin-hosting-info" role="status">
+                  <strong>Hosting is not checked automatically.</strong>
+                  <span>This dashboard does not currently run availability checks, so “Not monitored” does not mean the site is down. Open Connected sites below and use each site’s public URL to check it manually.</span>
+                  <button type="button" className="superadmin-secondary" onClick={() => openSitesFilter('all')}>View site URLs</button>
+                </div>
+              )}
+              <div className="superadmin-sites-toolbar">
+                <label className="superadmin-sites-search">Search sites
+                  <input type="search" value={siteSearch} onChange={(event) => setSiteSearch(event.target.value)} placeholder="Name, site ID, client, or URL" />
+                </label>
+                <label>Filter
+                  <select value={siteFilter} onChange={(event) => setSiteFilter(event.target.value)}>
+                    <option value="all">All sites</option>
+                    <option value="needs_attention">Needs attention</option>
+                    <option value="draft">Unpublished changes</option>
+                    <option value="unpaid">Not marked paid</option>
+                    <option value="paused">Paused</option>
+                    <option value="unassigned">Unassigned client</option>
+                    <option value="requests">Pending requests</option>
+                    <option value="live">Live content</option>
+                  </select>
+                </label>
+                <label>Sort by
+                  <select value={siteSort} onChange={(event) => setSiteSort(event.target.value)}>
+                    <option value="attention">Attention priority</option>
+                    <option value="oldest_request">Oldest request</option>
+                    <option value="newest">Recently added</option>
+                    <option value="name">Site name</option>
+                  </select>
+                </label>
               </div>
               {loading && sites.length === 0 ? <p className="superadmin-muted">Loading your sites…</p> : null}
               {!loading && !error && sites.length === 0 ? <p className="superadmin-empty">No sites are connected yet. Use “Add a site” to create your first workspace.</p> : null}
-              <div className="superadmin-site-list">
-                {sites.map((site) => (
+              {editingSiteId && sites.some((site) => site.site_id === editingSiteId) ? (
+                <SuperAdminSiteEditor
+                  site={sites.find((site) => site.site_id === editingSiteId)}
+                  invoke={invoke}
+                  onClose={() => setEditingSiteId('')}
+                  onChanged={() => Promise.all([loadSites(), loadDashboardData()])}
+                />
+              ) : <div className="superadmin-site-list">
+                {visibleSites.map((site) => (
                   <article className="superadmin-site" key={site.site_id}>
                     <div className="superadmin-site-main">
                       <span className="superadmin-site-mark" aria-hidden="true">{site.name?.slice(0, 1).toUpperCase() || 'S'}</span>
@@ -452,8 +731,16 @@ function SuperAdmin() {
                       </div>
                       <div className="superadmin-client-summary"><small>CLIENT ACCOUNT</small><span>{site.client_email || 'No login assigned'}</span><em className={site.client_user_id && site.client_enabled ? 'enabled' : ''}>{site.client_user_id && site.client_enabled ? 'Access enabled' : site.client_user_id ? 'Access revoked' : 'Not configured'}</em></div>
                     </div>
+                    <div className="superadmin-site-operational">
+                      <span className={`superadmin-readiness ${site.readiness.toLowerCase().replaceAll(' ', '-')}`}>{site.readiness}</span>
+                      <span className="superadmin-operational-item"><small>PAYMENT</small><strong>{site.payment_status === 'paid' ? 'Paid' : site.payment_status === 'awaiting_payment' ? 'Awaiting payment' : 'Not recorded'}</strong></span>
+                      <span className="superadmin-operational-item"><small>CONTENT</small><strong>{site.has_unpublished_draft ? 'Unpublished changes' : 'Live content'}</strong><time dateTime={site.published_at || undefined}>{site.published_at ? `Published ${new Date(site.published_at).toLocaleDateString()}` : 'Publish time not tracked'}</time></span>
+                      <span className="superadmin-operational-item"><small>HOSTING</small><strong className="not-monitored">Not monitored</strong></span>
+                      <span className="superadmin-operational-item"><small>EDIT REQUESTS</small><strong>{site.pending_request_count || 0} pending</strong>{site.oldest_pending_request_at && <time dateTime={site.oldest_pending_request_at}>Oldest waiting {formatAge(site.oldest_pending_request_at)} · {new Date(site.oldest_pending_request_at).toLocaleDateString()}</time>}</span>
+                      {site.missing_configuration?.length > 0 && <p className="superadmin-config-warning">Missing configuration: {site.missing_configuration.join(', ')}</p>}
+                    </div>
                     <div className="superadmin-site-actions">
-                      {getSiteAdminUrl(site) && <a className="superadmin-manage-link" href={getSiteAdminUrl(site)} target="_blank" rel="noreferrer">Manage card</a>}
+                      <button type="button" className="superadmin-manage-link" disabled={busyAction !== ''} onClick={() => setEditingSiteId(site.site_id)}>Edit site</button>
                       {site.client_user_id && site.client_enabled ? <>
                         <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => { setResetSite(site); setResetPassword(''); setResetPasswordConfirm(''); setError(''); }}>Change password</button>
                         <button type="button" className="superadmin-danger" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'revoke_client', `Revoke ${site.client_email}'s access to ${site.name}?`)}>Revoke access</button>
@@ -463,10 +750,14 @@ function SuperAdmin() {
                         <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => { setAssignSite(site); setAssignEmail(''); setAssignPassword(''); setAssignPasswordConfirm(''); setError(''); }}>Create client login</button>
                       )}
                       <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'set_site_active', `${site.is_active ? 'Pause' : 'Activate'} ${site.name}?`)}>{site.is_active ? 'Pause site' : 'Activate site'}</button>
+                      <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => setSitePaymentStatus(site, site.payment_status === 'awaiting_payment' ? 'paid' : site.payment_status === 'paid' ? 'none' : 'awaiting_payment')}>
+                        {site.payment_status === 'awaiting_payment' ? 'Mark paid' : site.payment_status === 'paid' ? 'Clear payment' : 'Mark awaiting payment'}
+                      </button>
                     </div>
                   </article>
                 ))}
-              </div>
+                {visibleSites.length === 0 && sites.length > 0 && <p className="superadmin-empty">No sites match this search and filter.</p>}
+              </div>}
             </section>
           )}
 

@@ -6,8 +6,17 @@ import "./style.css";
 const isAdmin = window.location.pathname.replace(/\/+$/, "").startsWith("/admin");
 const isSuperAdmin = window.location.hostname === "superadmin-callingcard.web.app"
   || window.location.pathname.replace(/\/+$/, "").startsWith("/superadmin");
+const isEditRequest = window.location.pathname.replace(/\/+$/, "").startsWith("/edit-request");
 
-if (isSuperAdmin) {
+if (isEditRequest) {
+  import("./EditRequest").then(({ default: EditRequest }) => {
+    ReactDOM.createRoot(document.getElementById("root")).render(
+      <React.StrictMode>
+        <EditRequest />
+      </React.StrictMode>,
+    );
+  });
+} else if (isSuperAdmin) {
   import("./SuperAdmin").then(({ default: SuperAdmin }) => {
     ReactDOM.createRoot(document.getElementById("root")).render(
       <React.StrictMode>
@@ -33,7 +42,7 @@ if (isSuperAdmin) {
 }
 
 // PWA service worker registration (only for public card, not admin)
-if (!isAdmin && !isSuperAdmin && "serviceWorker" in navigator) {
+if (!isAdmin && !isSuperAdmin && !isEditRequest && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch((error) => {
       console.error("Service worker registration failed:", error);

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.118.0";
+import nodemailer from "npm:nodemailer@6.9.16";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -39,6 +40,496 @@ function isValidClientPassword(value: unknown): value is string {
 
 function invalid(message: string, origin: string | null) {
   return jsonResponse({ error: message }, 400, origin);
+}
+
+const editableProfileFields = new Set([
+  "name", "business", "role", "eyebrow", "phone", "phone_link", "email",
+  "address", "address_link", "facebook", "youtube", "description",
+  "profile_image_url", "site_title", "site_icon_url", "theme_mode",
+  "custom_qr_url", "custom_links",
+]);
+
+function profileTableForSite(siteId: string) {
+  if (siteId === "calling-card-d2") return "calling_card_d2_profiles";
+  if (siteId === "calling-card-d3") return "calling_card_d3_profiles";
+  if (siteId === "calling-card-d4") return "calling_card_d4_profiles";
+  if (siteId === "calling-card-d5") return "calling_card_d5_profiles";
+  if (siteId === "calling-card-d6") return "calling_card_d6_profiles";
+  if (siteId === "calling-card-d7") return "calling_card_d7_profiles";
+  if (siteId === "calling-card-d8") return "calling_card_d8_profiles";
+  if (siteId === "calling-card-d9") return "calling_card_d9_profiles";
+  if (siteId === "calling-card-d10") return "calling_card_d10_profiles";
+  return "site_profiles";
+}
+
+function productsTableForSite(siteId: string) {
+  if (siteId === "calling-card-d2") return "calling_card_d2_products";
+  if (siteId === "calling-card-d3") return "calling_card_d3_products";
+  if (siteId === "calling-card-d4") return "calling_card_d4_products";
+  if (siteId === "calling-card-d5") return "calling_card_d5_products";
+  if (siteId === "calling-card-d6") return "calling_card_d6_products";
+  if (siteId === "calling-card-d7") return "calling_card_d7_products";
+  if (siteId === "calling-card-d8") return "calling_card_d8_products";
+  if (siteId === "calling-card-d9") return "calling_card_d9_products";
+  if (siteId === "calling-card-d10") return "calling_card_d10_products";
+  return "site_products";
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseSafeWebUrl(value: string) {
+  const candidate = /^[a-z][a-z\d+.-]*:/i.test(value) ? value : `https://${value}`;
+  try {
+    const url = new URL(candidate);
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname || url.username || url.password) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function validateDraftLinks(profile: Record<string, unknown>, products: Record<string, unknown>[]) {
+  for (const field of ["address_link", "facebook", "youtube", "profile_image_url", "site_icon_url", "custom_qr_url"]) {
+    const value = profile[field];
+    if (typeof value === "string" && value.trim() && !parseSafeWebUrl(value.trim())) {
+      return `"${field}" must be a valid HTTP or HTTPS URL without embedded credentials.`;
+    }
+  }
+  if (typeof profile.phone_link === "string" && profile.phone_link.trim()) {
+    const value = profile.phone_link.trim();
+    if (!/^tel:\+?[\d\s().-]{3,80}$/i.test(value)
+      && !/^\+?[\d\s().-]{3,80}$/.test(value)) {
+      return '"phone_link" must be a valid telephone link.';
+    }
+  }
+  if (profile.custom_links !== undefined) {
+    if (!Array.isArray(profile.custom_links)) return "Profile custom links must be a list.";
+    for (const link of profile.custom_links) {
+      if (!isObject(link)) return "Each custom link must be an object.";
+      for (const field of ["qr_image_url", "payment_url"]) {
+        const value = link[field];
+        if (typeof value === "string" && value.trim() && !parseSafeWebUrl(value.trim())) {
+          return `Custom-link "${field}" must be a valid HTTP or HTTPS URL without embedded credentials.`;
+        }
+      }
+      if (typeof link.url === "string" && link.url.trim()) {
+        const value = link.url.trim();
+        const isPhoneNumber = link.icon === "fa-solid fa-phone"
+          && /^\+?[\d\s().-]{3,80}$/.test(value);
+        if (!isPhoneNumber
+          && !parseSafeWebUrl(value)
+          && !/^mailto:[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(value)
+          && !/^tel:\+?[\d\s().-]{3,80}$/i.test(value)
+          && !/^sms:\+?[\d\s().-]{3,80}$/i.test(value)) {
+          return "Custom-link destinations must use a valid HTTP(S), email, telephone, or SMS link.";
+        }
+      }
+    }
+  }
+  for (const product of products) {
+    for (const field of ["image_url"]) {
+      const value = product[field];
+      if (typeof value === "string" && value.trim() && !parseSafeWebUrl(value.trim())) {
+        return `Product "${field}" must be a valid HTTP or HTTPS URL without embedded credentials.`;
+      }
+    }
+    if (product.gallery !== undefined) {
+      if (!Array.isArray(product.gallery)) return "Product galleries must be lists.";
+      for (const image of product.gallery) {
+        if (typeof image !== "string" || !parseSafeWebUrl(image.trim())) {
+          return "Every product gallery image must be a valid HTTP or HTTPS URL.";
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function validateDraft(profile: unknown, products: unknown) {
+  if (!isObject(profile) || !Array.isArray(products) || products.length > 100) {
+    return "A profile object and no more than 100 products are required.";
+  }
+  if (Object.keys(profile).some((key) => !editableProfileFields.has(key))) {
+    return "The profile contains an unsupported field.";
+  }
+  for (const [key, value] of Object.entries(profile)) {
+    if (key === "custom_links") {
+      if (!Array.isArray(value) || value.length > 100) return "Profile custom links must be a list of no more than 100 items.";
+      for (const link of value) {
+        if (!isObject(link)) return "Each custom link must be an object.";
+        for (const field of ["id", "type", "label", "url", "icon", "qr_image_url", "payment_url"]) {
+          if (link[field] !== undefined
+            && (typeof link[field] !== "string" || link[field].length > 2000)) {
+            return `Custom-link field "${field}" must be text within the allowed length.`;
+          }
+        }
+        if (link.type === "payment") {
+          if (!String(link.label || "").trim() || !String(link.qr_image_url || "").trim()) {
+            return "Each payment button needs a label and QR image URL.";
+          }
+        } else if (!String(link.label || "").trim() || !String(link.url || "").trim()) {
+          return "Each social or action button needs a label and destination URL.";
+        }
+      }
+      continue;
+    }
+    if (typeof value !== "string" || value.length > (key === "description" ? 10000 : 2000)) {
+      return `Profile field "${key}" must be text within the allowed length.`;
+    }
+  }
+  for (const product of products) {
+    if (!isObject(product) || typeof product.name !== "string" || !product.name.trim() || product.name.length > 200) {
+      return "Every product needs a name of up to 200 characters.";
+    }
+    if (product.id !== undefined && product.id !== null
+      && (typeof product.id !== "string"
+        || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(product.id))) {
+      return "Product IDs must be valid UUIDs.";
+    }
+    for (const field of ["description", "price", "image_url", "alt"]) {
+      if (product[field] !== undefined && (typeof product[field] !== "string" || product[field].length > 10000)) {
+        return `Product field "${field}" must be text within the allowed length.`;
+      }
+    }
+    if (product.gallery !== undefined
+      && (!Array.isArray(product.gallery) || product.gallery.length > 100)) {
+      return "Product galleries must be lists of no more than 100 images.";
+    }
+    if (product.is_featured !== undefined && typeof product.is_featured !== "boolean") {
+      return "Product featured status must be true or false.";
+    }
+    if (product.sort_order !== undefined
+      && (!Number.isInteger(product.sort_order) || product.sort_order < 0 || product.sort_order > 10000)) {
+      return "Product sort order must be a whole number between 0 and 10,000.";
+    }
+  }
+  const productIds = products.map((product) => isObject(product) && typeof product.id === "string" ? product.id : "").filter(Boolean);
+  if (new Set(productIds).size !== productIds.length) return "Product IDs must be unique.";
+  return validateDraftLinks(profile, products);
+}
+
+function validateProductRequestIds(request: Record<string, unknown>) {
+  if (request.request_type !== "products") return null;
+  const proposed = Array.isArray(request.payload)
+    ? request.payload
+    : isObject(request.payload) && Array.isArray(request.payload.products)
+      ? request.payload.products
+      : null;
+  if (!proposed) return "The submitted product list is invalid.";
+  const ids: string[] = [];
+  for (const product of proposed) {
+    if (!isObject(product) || typeof product.id !== "string"
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(product.id)) {
+      return "Each requested product must have a valid product ID.";
+    }
+    ids.push(product.id);
+  }
+  if (new Set(ids).size !== ids.length) return "Requested product IDs must be unique.";
+  return null;
+}
+
+const productReviewFields = ["name", "description", "price", "image_url", "alt", "gallery", "is_featured"] as const;
+const profileFieldLabels: Record<string, string> = {
+  name: "Name",
+  business: "Business",
+  role: "Role or title",
+  eyebrow: "Short label",
+  description: "Description",
+  phone: "Phone",
+  phone_link: "Phone link",
+  email: "Public email",
+  address: "Address",
+  address_link: "Address / map link",
+  facebook: "Facebook URL",
+  youtube: "YouTube URL",
+  site_title: "Browser tab title",
+  site_icon_url: "Site icon URL",
+  profile_image_url: "Profile image URL",
+  custom_qr_url: "Custom QR image URL",
+  theme_mode: "Theme",
+  custom_links: "Custom links and payment buttons",
+};
+
+function stableValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableValue).join(",")}]`;
+  if (isObject(value)) {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableValue(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function customLinkIdentity(link: unknown, index: number) {
+  return isObject(link) && link.id !== undefined && link.id !== null && String(link.id)
+    ? `id:${String(link.id)}`
+    : `index:${index}`;
+}
+
+function buildRequestChanges(
+  request: Record<string, unknown>,
+  profile: Record<string, unknown>,
+  products: Record<string, unknown>[],
+  includeUnchanged = false,
+) {
+  const changes: Array<Record<string, unknown>> = [];
+  if (request.request_type === "profile") {
+    const patch = isObject(request.payload) && Object.keys(request.payload).length
+      ? request.payload
+      : isObject(request.fields) ? request.fields : {};
+    for (const [field, value] of Object.entries(patch)) {
+      if (!editableProfileFields.has(field)) continue;
+      if (field === "custom_links") {
+        const oldLinks = Array.isArray(profile.custom_links) ? profile.custom_links : [];
+        const newLinks = Array.isArray(value) ? value : [];
+        const oldByIdentity = new Map(oldLinks.map((link, index) => [customLinkIdentity(link, index), { link, index }]));
+        const newByIdentity = new Map(newLinks.map((link, index) => [customLinkIdentity(link, index), { link, index }]));
+        const identities = [
+          ...newLinks.map((link, index) => customLinkIdentity(link, index)),
+          ...oldLinks.map((link, index) => customLinkIdentity(link, index)),
+        ].filter((identity, index, all) => all.indexOf(identity) === index);
+        for (const identity of identities) {
+          const previous = oldByIdentity.get(identity);
+          const requested = newByIdentity.get(identity);
+          if (stableValue(previous?.link ?? null) === stableValue(requested?.link ?? null)) continue;
+          const item = requested?.link ?? previous?.link;
+          const label = isObject(item) && typeof item.label === "string" && item.label.trim()
+            ? item.label.trim()
+            : "Untitled button";
+          const typeLabel = isObject(item) && item.type === "payment" ? "Payment method" : "Social button";
+          changes.push({
+            key: `profile:custom_link:${encodeURIComponent(identity)}`,
+            label: `${typeLabel}: ${label}`,
+            old_value: previous?.link ?? null,
+            new_value: requested?.link ?? null,
+            old_index: previous?.index ?? null,
+            new_index: requested?.index ?? null,
+          });
+        }
+        continue;
+      }
+      const previous = profile[field] ?? null;
+      if (!includeUnchanged && stableValue(previous) === stableValue(value)) continue;
+      changes.push({
+        key: `profile:${field}`,
+        label: profileFieldLabels[field] || field,
+        old_value: previous,
+        new_value: value,
+      });
+    }
+    return changes;
+  }
+
+  const proposed = Array.isArray(request.payload)
+    ? request.payload
+    : isObject(request.payload) && Array.isArray(request.payload.products)
+      ? request.payload.products
+      : [];
+  const oldById = new Map(products.map((product) => [String(product.id), product]));
+  const newById = new Map(proposed.filter(isObject).map((product) => [String(product.id), product]));
+
+  for (const product of proposed.filter(isObject)) {
+    const id = String(product.id || "");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) continue;
+    const previous = oldById.get(id);
+    if (!previous) {
+      const newProduct = Object.fromEntries(
+        Object.entries(product).filter(([key]) => ["id", ...productReviewFields].includes(key)),
+      );
+      changes.push({ key: `product:${id}:create`, label: `Add product: ${String(product.name || "Unnamed")}`, old_value: null, new_value: newProduct });
+      continue;
+    }
+    for (const field of productReviewFields) {
+      const oldValue = previous[field] ?? null;
+      const newValue = product[field] ?? null;
+      if (!includeUnchanged && stableValue(oldValue) === stableValue(newValue)) continue;
+      changes.push({
+        key: `product:${id}:${field}`,
+        label: `${String(previous.name || product.name || "Product")} · ${field.replaceAll("_", " ")}`,
+        old_value: oldValue,
+        new_value: newValue,
+      });
+    }
+  }
+  for (const product of products) {
+    const id = String(product.id || "");
+    if (id && !newById.has(id)) {
+      changes.push({
+        key: `product:${id}:delete`,
+        label: `Remove product: ${String(product.name || id)}`,
+        old_value: product,
+        new_value: null,
+      });
+    }
+  }
+  return changes;
+}
+
+function getLatestRequestChanges(
+  requests: Record<string, unknown>[],
+  profile: Record<string, unknown>,
+  products: Record<string, unknown>[],
+) {
+  const latestRequestByKey = new Map<string, Record<string, unknown>>();
+  for (const request of requests) {
+    const requestId = String(request.id);
+    const createdAt = String(request.created_at || "");
+    for (const change of buildRequestChanges(request, profile, products, true)) {
+      const key = String(change.key);
+      const latest = latestRequestByKey.get(key);
+      const latestDate = String(latest?.created_at || "");
+      const latestId = String(latest?.id || "");
+      if (!latest || createdAt > latestDate || (createdAt === latestDate && requestId > latestId)) {
+        latestRequestByKey.set(key, request);
+      }
+    }
+  }
+
+  return new Map(requests.map((request) => {
+    const requestId = String(request.id);
+    const changes = buildRequestChanges(request, profile, products).filter((change) => (
+      String(latestRequestByKey.get(String(change.key))?.id || "") === requestId
+    ));
+    return [requestId, changes];
+  }));
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character] || character);
+}
+
+function formatDecisionValue(value: unknown) {
+  return value === null || value === undefined
+    ? "—"
+    : typeof value === "string" ? value : JSON.stringify(value, null, 2) || String(value);
+}
+
+async function sendRejectedChangeEmails(
+  serviceClient: ReturnType<typeof createClient>,
+  siteId: string,
+  publishedAt: string | null = null,
+) {
+  const { data: requests, error: requestError } = await serviceClient
+    .from("site_edit_requests")
+    .select("id, status, reviewed_at, review_decisions")
+    .eq("site_id", siteId)
+    .in("status", ["approved", "rejected"])
+    .in("email_status", ["pending", "failed"])
+    .order("reviewed_at", { ascending: true })
+    .limit(100);
+  if (requestError) throw requestError;
+
+  const eligibleRequests = (requests || []).filter((request) => (
+    request.status === "rejected"
+    || (
+      request.status === "approved"
+      && publishedAt
+      && request.reviewed_at
+      && new Date(request.reviewed_at) <= new Date(publishedAt)
+    )
+  ));
+  const { data: siteProfile, error: profileError } = await serviceClient
+    .from(profileTableForSite(siteId))
+    .select("email")
+    .eq("site_id", siteId)
+    .maybeSingle();
+  if (profileError) throw profileError;
+  const recipient = siteProfile?.email?.trim() || "";
+  const host = Deno.env.get("SMTP_HOST");
+  const portValue = Number(Deno.env.get("SMTP_PORT") || "587");
+  const username = Deno.env.get("SMTP_USER");
+  const password = Deno.env.get("SMTP_PASS");
+  const from = Deno.env.get("SMTP_FROM");
+  if (!host || !Number.isInteger(portValue) || portValue < 1 || portValue > 65535 || !username || !password || !from) {
+    const message = "SMTP secrets are not fully configured (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM).";
+    for (const request of eligibleRequests) {
+      const { error } = await serviceClient.from("site_edit_requests")
+        .update({ email_status: "failed", email_error: message })
+        .eq("id", request.id);
+      if (error) throw error;
+    }
+    return { sent: 0, failed: requests?.length || 0, warning: message };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host,
+    port: portValue,
+    secure: portValue === 465,
+    auth: { user: username, pass: password },
+  });
+  let sent = 0;
+  let failed = 0;
+  const errors: string[] = [];
+  for (const request of eligibleRequests) {
+    const rejected = Object.values(isObject(request.review_decisions) ? request.review_decisions : {})
+      .filter((item): item is Record<string, unknown> => isObject(item) && item.decision === "reject");
+    if (rejected.length === 0) {
+      const { error } = await serviceClient.from("site_edit_requests")
+        .update({ email_status: "not_required", email_error: "" })
+        .eq("id", request.id);
+      if (error) throw error;
+      continue;
+    }
+    const { data: claimed, error: claimError } = await serviceClient.from("site_edit_requests")
+      .update({ email_status: "sending", email_error: "" })
+      .eq("id", request.id)
+      .in("email_status", ["pending", "failed"])
+      .select("id")
+      .maybeSingle();
+    if (claimError) throw claimError;
+    if (!claimed) continue;
+
+    if (!recipient) {
+      const message = "The site's saved profile email is empty. Add an email in the client admin profile before retrying.";
+      const { error } = await serviceClient.from("site_edit_requests")
+        .update({ email_status: "failed", email_error: message.slice(0, 1900) })
+        .eq("id", request.id);
+      if (error) throw error;
+      failed++;
+      errors.push(message);
+      continue;
+    }
+
+    const plainRows = rejected.map((item) => [
+      String(item.label || "Requested change"),
+      `Current data: ${formatDecisionValue(item.old_value)}`,
+      `Requested data: ${formatDecisionValue(item.new_value)}`,
+      `Reason: ${String(item.reason || "Not approved")}`,
+    ].join("\n"));
+    const htmlRows = rejected.map((item) => (
+      `<li><strong>${escapeHtml(String(item.label || "Requested change"))}</strong><br><strong>Current data:</strong><pre>${escapeHtml(formatDecisionValue(item.old_value))}</pre><strong>Requested data:</strong><pre>${escapeHtml(formatDecisionValue(item.new_value))}</pre><strong>Reason:</strong> ${escapeHtml(String(item.reason || "Not approved"))}</li>`
+    ));
+    try {
+      await transporter.sendMail({
+        from,
+        to: recipient,
+        subject: "Update about your requested card changes",
+        text: `Some requested changes were not published:\n\n${plainRows.join("\n\n")}`,
+        html: `<p>Some requested changes were not published:</p><ul>${htmlRows.join("")}</ul>`,
+      });
+      const { error } = await serviceClient.from("site_edit_requests")
+        .update({ email_status: "sent", email_error: "" })
+        .eq("id", request.id);
+      if (error) throw error;
+      sent++;
+    } catch (mailError) {
+      const message = mailError instanceof Error ? mailError.message.slice(0, 1900) : "SMTP delivery failed.";
+      console.error("Rejected-change email delivery failed:", message);
+      const { error } = await serviceClient.from("site_edit_requests")
+        .update({ email_status: "failed", email_error: message })
+        .eq("id", request.id);
+      if (error) throw error;
+      failed++;
+      errors.push(message);
+    }
+  }
+  return { sent, failed, warning: errors[0] || "" };
 }
 
 async function deleteCreatedUser(
@@ -84,6 +575,16 @@ Deno.serve(async (request) => {
   const serviceClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  const recordActivity = async (siteId: string | null, action: string, description: string) => {
+    const { error } = await serviceClient.from("super_admin_activity").insert({
+      site_id: siteId,
+      actor_user_id: userResult.user.id,
+      actor_email: userResult.user.email || "",
+      action,
+      description,
+    });
+    if (error) throw error;
+  };
 
   let body: Record<string, unknown>;
   try {
@@ -137,13 +638,474 @@ Deno.serve(async (request) => {
   if (!admin) return jsonResponse({ error: "Super-admin access is required." }, 403, origin);
 
   try {
+    if (body.action === "review_edit_request") {
+      const requestId = String(body.request_id || "").trim();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+        || !isObject(body.decisions)) {
+        return invalid("A valid request ID and per-item decisions are required.", origin);
+      }
+      const { data: editRequest, error: requestError } = await serviceClient
+        .from("site_edit_requests")
+        .select("id, site_id, client_email, request_type, fields, payload, notes, status, created_at")
+        .eq("id", requestId)
+        .maybeSingle();
+      if (requestError) throw requestError;
+      if (!editRequest) return jsonResponse({ error: "Edit request not found." }, 404, origin);
+      if (editRequest.status !== "pending") return invalid("This edit request is no longer pending.", origin);
+      const productRequestError = validateProductRequestIds(editRequest);
+      if (productRequestError) return invalid(productRequestError, origin);
+
+      const [draftResult, profileResult, productsResult] = await Promise.all([
+        serviceClient.from("site_content_drafts")
+          .select("profile, products")
+          .eq("site_id", editRequest.site_id)
+          .maybeSingle(),
+        serviceClient.from(profileTableForSite(editRequest.site_id))
+          .select("*")
+          .eq("site_id", editRequest.site_id)
+          .maybeSingle(),
+        serviceClient.from(productsTableForSite(editRequest.site_id))
+          .select("id, name, description, price, image_url, alt, gallery, is_featured, sort_order")
+          .eq("site_id", editRequest.site_id)
+          .order("sort_order"),
+      ]);
+      if (draftResult.error) throw draftResult.error;
+      if (profileResult.error) throw profileResult.error;
+      if (productsResult.error) throw productsResult.error;
+
+      const baseProfile = draftResult.data?.profile ?? Object.fromEntries(
+        Object.entries(profileResult.data || {}).filter(([key]) => editableProfileFields.has(key)),
+      );
+      let profile = isObject(baseProfile) ? { ...baseProfile } : {};
+      let products = (draftResult.data?.products ?? productsResult.data ?? []).map((product) => ({ ...product }));
+      const { data: siteRequests, error: siteRequestsError } = await serviceClient
+        .from("site_edit_requests")
+        .select("id, request_type, fields, payload, created_at")
+        .eq("site_id", editRequest.site_id)
+        .order("created_at", { ascending: false })
+        .limit(1000);
+      if (siteRequestsError) throw siteRequestsError;
+      const requestChanges = getLatestRequestChanges(siteRequests || [], profile, products);
+      const changes = requestChanges.get(requestId) || [];
+      const decisions = body.decisions;
+      if (changes.length === 0) {
+        if (Object.keys(decisions).length > 0) {
+          return invalid("This request no longer contains changes from the current content. Refresh and review again.", origin);
+        }
+        const { data: completed, error } = await serviceClient.from("site_edit_requests")
+          .update({ status: "completed", reviewed_at: new Date().toISOString(), email_status: "not_required" })
+          .eq("id", requestId)
+          .eq("status", "pending")
+          .select("id")
+          .maybeSingle();
+        if (error) throw error;
+        if (!completed) return invalid("This edit request is no longer pending.", origin);
+        await recordActivity(editRequest.site_id, "edit_request_closed", "Closed an edit request because its requested values already match current content.");
+        return jsonResponse({ ok: true, status: "completed", approved_count: 0, rejected_count: 0, email_sent: 0, email_warning: "" }, 200, origin);
+      }
+      const requestedKeys = Object.keys(decisions);
+      const validKeys = new Set(changes.map((change) => String(change.key)));
+      if (requestedKeys.length !== changes.length || requestedKeys.some((key) => !validKeys.has(key))) {
+        return invalid("Submit a decision for every requested change. The site data may have changed; refresh and review again.", origin);
+      }
+      const accepted: Array<Record<string, unknown>> = [];
+      const normalizedDecisions: Record<string, {
+        decision: string;
+        reason: string;
+        label: string;
+        old_value: unknown;
+        new_value: unknown;
+      }> = {};
+      for (const change of changes) {
+        const key = String(change.key);
+        const submitted = decisions[key];
+        if (!isObject(submitted) || !["approve", "reject"].includes(String(submitted.decision))) {
+          return invalid(`Choose approve or reject for "${String(change.label)}".`, origin);
+        }
+        const reason = typeof submitted.reason === "string" ? submitted.reason.trim() : "";
+        if (submitted.decision === "reject" && (!reason || reason.length > 2000)) {
+          return invalid(`Enter a rejection reason (up to 2,000 characters) for "${String(change.label)}".`, origin);
+        }
+        normalizedDecisions[key] = {
+          decision: String(submitted.decision),
+          reason,
+          label: String(change.label),
+          old_value: change.old_value,
+          new_value: change.new_value,
+        };
+        if (submitted.decision === "approve") accepted.push(change);
+      }
+
+      for (const change of accepted) {
+        const key = String(change.key);
+        if (key.startsWith("profile:custom_link:")) {
+          const identity = decodeURIComponent(key.slice("profile:custom_link:".length));
+          const links = Array.isArray(profile.custom_links) ? [...profile.custom_links] : [];
+          const oldLink = change.old_value;
+          const existingIndex = links.findIndex((link, index) => (
+            (oldLink !== null && stableValue(link) === stableValue(oldLink))
+            || customLinkIdentity(link, index) === identity
+          ));
+          if (change.new_value === null) {
+            if (existingIndex >= 0) links.splice(existingIndex, 1);
+          } else {
+            const newLink = change.new_value;
+            if (!isObject(newLink)) return invalid("The requested social or payment button is invalid.", origin);
+            if (existingIndex >= 0) {
+              links[existingIndex] = newLink;
+            } else {
+              const requestedIndex = Number.isInteger(change.new_index) ? Number(change.new_index) : links.length;
+              links.splice(Math.min(Math.max(requestedIndex, 0), links.length), 0, newLink);
+            }
+          }
+          profile.custom_links = links;
+          continue;
+        }
+        if (key.startsWith("profile:")) {
+          const field = key.slice("profile:".length);
+          if (!editableProfileFields.has(field)) return invalid("The request contains an unsupported profile field.", origin);
+          profile[field] = change.new_value;
+          continue;
+        }
+        const match = key.match(/^product:([0-9a-f-]{36}):(create|delete|[a-z_]+)$/i);
+        if (!match) return invalid("The request contains an unsupported product change.", origin);
+        const [, productId, field] = match;
+        if (field === "create") {
+          if (!isObject(change.new_value)) return invalid("The requested product is invalid.", origin);
+          products.push(change.new_value);
+        } else if (field === "delete") {
+          products = products.filter((product) => product.id !== productId);
+        } else {
+          if (!productReviewFields.includes(field as typeof productReviewFields[number])) {
+            return invalid("The request contains an unsupported product field.", origin);
+          }
+          products = products.map((product) => product.id === productId
+            ? { ...product, [field]: change.new_value }
+            : product);
+        }
+      }
+      const saveContentDraft = accepted.length > 0;
+      if (saveContentDraft) {
+        const validationError = validateDraft(profile, products);
+        if (validationError) return invalid(validationError, origin);
+      }
+
+      const { data: reviewStatus, error: reviewError } = await serviceClient.rpc("review_site_edit_request", {
+        target_request_id: requestId,
+        actor_user_id: userResult.user.id,
+        next_profile: profile,
+        next_products: products,
+        decisions: normalizedDecisions,
+        save_content_draft: saveContentDraft,
+      });
+      if (reviewError) {
+        if (reviewError.message.includes("no longer pending")) return invalid(reviewError.message, origin);
+        throw reviewError;
+      }
+      await recordActivity(
+        editRequest.site_id,
+        "edit_request_reviewed",
+        `Reviewed ${editRequest.client_email}'s request: ${accepted.length} change(s) approved to draft and ${changes.length - accepted.length} rejected.`,
+      );
+      let emailResult = { sent: 0, failed: 0, warning: "" };
+      if (!saveContentDraft) {
+        emailResult = await sendRejectedChangeEmails(serviceClient, editRequest.site_id);
+      }
+      return jsonResponse({
+        ok: true,
+        status: reviewStatus,
+        approved_count: accepted.length,
+        rejected_count: changes.length - accepted.length,
+        email_sent: emailResult.sent,
+        email_warning: emailResult.warning,
+      }, 200, origin);
+    }
+
+    if (body.action === "retry_rejection_emails") {
+      const siteId = String(body.site_id || "").trim();
+      if (!siteId) return invalid("A site ID is required.", origin);
+      const { data: site, error: siteError } = await serviceClient.from("managed_sites")
+        .select("site_id")
+        .eq("site_id", siteId)
+        .maybeSingle();
+      if (siteError) throw siteError;
+      if (!site) return jsonResponse({ error: "Site not found." }, 404, origin);
+      const { data: draft, error: draftError } = await serviceClient
+        .from("site_content_drafts")
+        .select("published_at")
+        .eq("site_id", siteId)
+        .maybeSingle();
+      if (draftError) throw draftError;
+      const result = await sendRejectedChangeEmails(serviceClient, siteId, draft?.published_at || null);
+      return jsonResponse({ ok: true, ...result }, 200, origin);
+    }
+
     if (body.action === "list_sites") {
-      const { data, error } = await serviceClient
+      const { data: sites, error } = await serviceClient
         .from("managed_sites")
-        .select("site_id, name, public_url, client_email, client_user_id, client_enabled, is_active, created_at")
+        .select("site_id, name, public_url, client_email, client_user_id, client_enabled, is_active, payment_status, created_at")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return jsonResponse({ sites: data || [] }, 200, origin);
+      const [profilesResult, d2ProfilesResult, d3ProfilesResult, d4ProfilesResult, d5ProfilesResult, d6ProfilesResult, d7ProfilesResult, d8ProfilesResult, d9ProfilesResult, d10ProfilesResult, draftsResult, requestsResult] = await Promise.all([
+        serviceClient.from("site_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("calling_card_d2_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("calling_card_d3_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("calling_card_d4_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("calling_card_d5_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("calling_card_d6_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("calling_card_d7_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("calling_card_d8_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("calling_card_d9_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("calling_card_d10_profiles")
+          .select("site_id, name, business, phone, email, address, profile_image_url")
+          .limit(5000),
+        serviceClient.from("site_content_drafts")
+          .select("site_id, updated_at, published_at")
+          .limit(5000),
+        serviceClient.rpc("get_pending_site_request_summary"),
+      ]);
+      if (profilesResult.error) throw profilesResult.error;
+      if (d2ProfilesResult.error) throw d2ProfilesResult.error;
+      if (d3ProfilesResult.error) throw d3ProfilesResult.error;
+      if (d4ProfilesResult.error) throw d4ProfilesResult.error;
+      if (d5ProfilesResult.error) throw d5ProfilesResult.error;
+      if (d6ProfilesResult.error) throw d6ProfilesResult.error;
+      if (d7ProfilesResult.error) throw d7ProfilesResult.error;
+      if (d8ProfilesResult.error) throw d8ProfilesResult.error;
+      if (d9ProfilesResult.error) throw d9ProfilesResult.error;
+      if (d10ProfilesResult.error) throw d10ProfilesResult.error;
+      if (draftsResult.error) throw draftsResult.error;
+      if (requestsResult.error) throw requestsResult.error;
+
+      const profilesBySite = new Map([
+        ...(profilesResult.data || []),
+        ...(d2ProfilesResult.data || []),
+        ...(d3ProfilesResult.data || []),
+        ...(d4ProfilesResult.data || []),
+        ...(d5ProfilesResult.data || []),
+        ...(d6ProfilesResult.data || []),
+        ...(d7ProfilesResult.data || []),
+        ...(d8ProfilesResult.data || []),
+        ...(d9ProfilesResult.data || []),
+        ...(d10ProfilesResult.data || []),
+      ].map((profile) => [profile.site_id, profile]));
+      const draftsBySite = new Map((draftsResult.data || []).map((draft) => [draft.site_id, draft]));
+      const requestsBySite = new Map((requestsResult.data || []).map((request) => [
+        request.site_id,
+        { count: Number(request.pending_request_count), oldest_at: request.oldest_pending_request_at },
+      ]));
+
+      const enrichedSites = (sites || []).map((site) => {
+        const profile = profilesBySite.get(site.site_id);
+        const draft = draftsBySite.get(site.site_id);
+        const pendingRequests = requestsBySite.get(site.site_id) || { count: 0, oldest_at: null };
+        const missingConfiguration = [];
+        if (!site.public_url?.trim()) missingConfiguration.push("Public URL");
+        else {
+          try {
+            if (new URL(site.public_url).protocol !== "https:") missingConfiguration.push("HTTPS URL");
+          } catch {
+            missingConfiguration.push("Valid public URL");
+          }
+        }
+        if (!profile) {
+          missingConfiguration.push("Profile");
+        } else {
+          if (!profile.name?.trim()) missingConfiguration.push("Contact name");
+          if (!profile.business?.trim()) missingConfiguration.push("Business name");
+        }
+        const hasUnpublishedDraft = Boolean(
+          draft && (!draft.published_at || draft.updated_at > draft.published_at),
+        );
+        return {
+          ...site,
+          has_unpublished_draft: hasUnpublishedDraft,
+          draft_updated_at: draft?.updated_at || null,
+          published_at: draft?.published_at || null,
+          pending_request_count: pendingRequests.count,
+          oldest_pending_request_at: pendingRequests.oldest_at,
+          missing_configuration: missingConfiguration,
+          hosting_health: "not_monitored",
+        };
+      });
+      return jsonResponse({ sites: enrichedSites }, 200, origin);
+    }
+
+    if (body.action === "get_site_editor") {
+      const siteId = String(body.site_id || "").trim();
+      if (!siteId) return invalid("A site ID is required.", origin);
+      const [
+        siteResult,
+        profileResult,
+        productsResult,
+        draftResult,
+        requestsResult,
+        emailFollowupsResult,
+      ] = await Promise.all([
+        serviceClient.from("managed_sites")
+          .select("site_id, name, payment_status")
+          .eq("site_id", siteId)
+          .maybeSingle(),
+        serviceClient.from(profileTableForSite(siteId))
+          .select("*")
+          .eq("site_id", siteId)
+          .maybeSingle(),
+        serviceClient.from(productsTableForSite(siteId))
+          .select("id, name, description, price, image_url, alt, gallery, is_featured, sort_order")
+          .eq("site_id", siteId)
+          .order("sort_order"),
+        serviceClient.from("site_content_drafts")
+          .select("profile, products, updated_at, published_at")
+          .eq("site_id", siteId)
+          .maybeSingle(),
+        serviceClient.from("site_edit_requests")
+          .select("id, site_id, client_email, request_type, fields, payload, notes, status, created_at, review_decisions, email_status, email_error")
+          .eq("site_id", siteId)
+          .order("created_at", { ascending: false })
+          .limit(1000),
+        serviceClient.from("site_edit_requests")
+          .select("id, client_email, status, email_status, email_error, reviewed_at")
+          .eq("site_id", siteId)
+          .in("status", ["approved", "rejected"])
+          .in("email_status", ["pending", "failed"])
+          .order("reviewed_at", { ascending: false })
+          .limit(50),
+      ]);
+      if (siteResult.error) throw siteResult.error;
+      if (!siteResult.data) return jsonResponse({ error: "Site not found." }, 404, origin);
+      if (profileResult.error) throw profileResult.error;
+      if (productsResult.error) throw productsResult.error;
+      if (draftResult.error) throw draftResult.error;
+      if (requestsResult.error) throw requestsResult.error;
+      if (emailFollowupsResult.error) throw emailFollowupsResult.error;
+      const currentProfile = draftResult.data?.profile ?? profileResult.data ?? {};
+      const currentProducts = draftResult.data?.products ?? productsResult.data ?? [];
+      const reviewableChanges = getLatestRequestChanges(requestsResult.data || [], currentProfile, currentProducts);
+      return jsonResponse({
+        site: siteResult.data,
+        profile: currentProfile,
+        products: currentProducts,
+        live_profile: profileResult.data || {},
+        live_products: productsResult.data || [],
+        requests: (requestsResult.data || [])
+          .filter((request) => request.status === "pending")
+          .map((request) => ({
+            ...request,
+            changes: reviewableChanges.get(String(request.id)) || [],
+          })),
+        email_followups: (emailFollowupsResult.data || []).filter((request) => (
+          request.status === "rejected"
+          || (
+            draftResult.data?.published_at
+            && request.reviewed_at
+            && new Date(request.reviewed_at) <= new Date(draftResult.data.published_at)
+          )
+        )),
+        has_draft: Boolean(draftResult.data),
+        draft_updated_at: draftResult.data?.updated_at || null,
+        published_at: draftResult.data?.published_at || null,
+      }, 200, origin);
+    }
+
+    if (body.action === "save_site_draft") {
+      const siteId = String(body.site_id || "").trim();
+      if (!siteId) return invalid("A site ID is required.", origin);
+      const validationError = validateDraft(body.profile, body.products);
+      if (validationError) return invalid(validationError, origin);
+      const { data: site, error: siteError } = await serviceClient
+        .from("managed_sites")
+        .select("site_id")
+        .eq("site_id", siteId)
+        .maybeSingle();
+      if (siteError) throw siteError;
+      if (!site) return jsonResponse({ error: "Site not found." }, 404, origin);
+      const editableProfile = Object.fromEntries(
+        Object.entries(body.profile as Record<string, unknown>)
+          .filter(([key]) => editableProfileFields.has(key)),
+      );
+      const { data: draft, error } = await serviceClient
+        .from("site_content_drafts")
+        .upsert({
+          site_id: siteId,
+          profile: editableProfile,
+          products: body.products as Record<string, unknown>[],
+          updated_by: userResult.user.id,
+          updated_at: new Date().toISOString(),
+          published_at: null,
+        }, { onConflict: "site_id" })
+        .select("updated_at")
+        .single();
+      if (error) throw error;
+      await recordActivity(siteId, "content_draft_saved", "Saved a private profile and product draft.");
+      return jsonResponse({ ok: true, draft_updated_at: draft.updated_at }, 200, origin);
+    }
+
+    if (body.action === "publish_site_draft") {
+      const siteId = String(body.site_id || "").trim();
+      if (!siteId) return invalid("A site ID is required.", origin);
+      const { error } = await serviceClient.rpc("publish_site_content_draft", {
+        target_site_id: siteId,
+        actor_user_id: userResult.user.id,
+      });
+      if (error) {
+        if (error.message.includes("Save a draft")) return invalid(error.message, origin);
+        if (error.message.includes("Site not found")) return jsonResponse({ error: error.message }, 404, origin);
+        throw error;
+      }
+      await recordActivity(siteId, "content_published", "Published the saved profile and product draft to the live card.");
+      const { data: publishedDraft, error: publishedDraftError } = await serviceClient
+        .from("site_content_drafts")
+        .select("published_at")
+        .eq("site_id", siteId)
+        .maybeSingle();
+      if (publishedDraftError) throw publishedDraftError;
+      const emailResult = await sendRejectedChangeEmails(serviceClient, siteId, publishedDraft?.published_at || null);
+      return jsonResponse({
+        ok: true,
+        published_at: new Date().toISOString(),
+        rejection_emails_sent: emailResult.sent,
+        rejection_email_warning: emailResult.warning,
+      }, 200, origin);
+    }
+
+    if (body.action === "get_dashboard_data") {
+      const [activityResult, requestsResult] = await Promise.all([
+        serviceClient
+          .from("super_admin_activity")
+          .select("id, site_id, actor_email, action, description, created_at")
+          .order("created_at", { ascending: false })
+          .limit(12),
+        serviceClient
+          .from("site_edit_requests")
+          .select("id, site_id, client_email, request_type, fields, payload, notes, status, created_at")
+          .eq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(20),
+      ]);
+      if (activityResult.error) throw activityResult.error;
+      if (requestsResult.error) throw requestsResult.error;
+      return jsonResponse({
+        activity: activityResult.data || [],
+        requests: requestsResult.data || [],
+      }, 200, origin);
     }
 
     if (body.action === "create_site") {
@@ -200,7 +1162,7 @@ Deno.serve(async (request) => {
         return jsonResponse({ error: siteError.code === "23505" ? "That site ID already exists." : "Could not save the site." }, 400, origin);
       }
 
-      const { error: profileError } = await serviceClient.from("site_profiles").insert({ site_id: siteId });
+      const { error: profileError } = await serviceClient.from(profileTableForSite(siteId)).insert({ site_id: siteId });
       if (profileError) {
         const { error: siteCleanupError } = await serviceClient.from("managed_sites").delete().eq("site_id", siteId);
         const userCleanupSucceeded = await deleteCreatedUser((id) => serviceClient.auth.admin.deleteUser(id), userId);
@@ -223,6 +1185,7 @@ Deno.serve(async (request) => {
         }
         throw assignmentError;
       }
+      await recordActivity(siteId, "site_created", `Created ${name} and assigned client access to ${email}.`);
       return jsonResponse({
         site: { site_id: siteId, name, public_url: parsedUrl.toString(), client_email: email, client_user_id: userId, client_enabled: true, is_active: true },
       }, 201, origin);
@@ -277,6 +1240,7 @@ Deno.serve(async (request) => {
         if (siteUpdateError) throw siteUpdateError;
         return invalid("A client login was assigned to this site by another request. Refresh and try again.", origin);
       }
+      await recordActivity(siteId, "client_assigned", `Assigned client access to ${email}.`);
       return jsonResponse({ site: { ...site, client_email: email, client_user_id: userId } }, 201, origin);
     }
 
@@ -292,6 +1256,30 @@ Deno.serve(async (request) => {
         .maybeSingle();
       if (error) throw error;
       if (!updatedSite) return jsonResponse({ error: "Site not found." }, 404, origin);
+      await recordActivity(siteId, "site_status_changed", `Set site availability to ${active ? "active" : "paused"}.`);
+      return jsonResponse({ ok: true }, 200, origin);
+    }
+
+    if (body.action === "set_payment_status") {
+      const siteId = String(body.site_id || "").trim();
+      const paymentStatus = body.payment_status;
+      if (!siteId || !["none", "awaiting_payment", "paid"].includes(String(paymentStatus))) {
+        return invalid("A site ID and valid payment status are required.", origin);
+      }
+      const { data: site, error } = await serviceClient
+        .from("managed_sites")
+        .update({ payment_status: paymentStatus, updated_at: new Date().toISOString() })
+        .eq("site_id", siteId)
+        .select("name")
+        .maybeSingle();
+      if (error) throw error;
+      if (!site) return jsonResponse({ error: "Site not found." }, 404, origin);
+      const descriptions = {
+        none: "Cleared payment follow-up",
+        awaiting_payment: "Marked as awaiting payment before publishing",
+        paid: "Marked payment as received",
+      };
+      await recordActivity(siteId, "payment_status_changed", `${descriptions[String(paymentStatus) as keyof typeof descriptions]} for ${site.name}.`);
       return jsonResponse({ ok: true }, 200, origin);
     }
 
@@ -301,7 +1289,7 @@ Deno.serve(async (request) => {
       if (!isValidClientPassword(password)) return invalid("Choose a client password between 12 and 128 characters.", origin);
       const { data: site, error: siteError } = await serviceClient
         .from("managed_sites")
-        .select("client_user_id")
+        .select("client_user_id, name")
         .eq("site_id", siteId)
         .single();
       if (siteError || !site?.client_user_id) return invalid("No client login is assigned to this site.", origin);
@@ -315,6 +1303,7 @@ Deno.serve(async (request) => {
         },
       });
       if (error) throw error;
+      await recordActivity(siteId, "client_password_reset", `Reset the client login password for ${site.name}.`);
       return jsonResponse({ ok: true }, 200, origin);
     }
 
@@ -339,6 +1328,7 @@ Deno.serve(async (request) => {
         .maybeSingle();
       if (error) throw error;
       if (!updatedSite) return jsonResponse({ error: "Site not found." }, 404, origin);
+      await recordActivity(siteId, "client_access_restored", "Restored client access.");
       return jsonResponse({ ok: true }, 200, origin);
     }
 
@@ -365,6 +1355,30 @@ Deno.serve(async (request) => {
         .maybeSingle();
       if (error) throw error;
       if (!updatedSite) return jsonResponse({ error: "Site not found." }, 404, origin);
+      await recordActivity(siteId, "client_access_revoked", "Revoked client access.");
+      return jsonResponse({ ok: true }, 200, origin);
+    }
+
+    if (body.action === "set_edit_request_status") {
+      const requestId = String(body.request_id || "").trim();
+      const status = body.status;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestId)
+        || !["pending", "completed"].includes(String(status))) {
+        return invalid("A valid request ID and status are required.", origin);
+      }
+      const { data: editRequest, error } = await serviceClient
+        .from("site_edit_requests")
+        .update({ status, reviewed_at: status === "completed" ? new Date().toISOString() : null })
+        .eq("id", requestId)
+        .select("site_id, client_email")
+        .maybeSingle();
+      if (error) throw error;
+      if (!editRequest) return jsonResponse({ error: "Edit request not found." }, 404, origin);
+      await recordActivity(
+        editRequest.site_id,
+        "edit_request_updated",
+        `${status === "completed" ? "Completed" : "Reopened"} an edit request from ${editRequest.client_email}.`,
+      );
       return jsonResponse({ ok: true }, 200, origin);
     }
 

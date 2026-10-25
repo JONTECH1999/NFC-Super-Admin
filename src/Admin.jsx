@@ -14,7 +14,6 @@ const CACHE_SCOPE = (() => {
   return "default";
 })();
 
-const PROFILE_CACHE_KEY = `nfc_card_profile_cache_${CACHE_SCOPE}_${siteId}`;
 const PRODUCTS_CACHE_KEY = `nfc_card_products_cache_${CACHE_SCOPE}_${siteId}`;
 
 /* ============================================================
@@ -258,7 +257,7 @@ function RequiredPasswordChange({ session, onComplete }) {
 /* ============================================================
    Profile Tab
    ============================================================ */
-function ProfileTab({ showToast, section }) {
+function ProfileTab({ showToast, section, submitEditRequest }) {
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(true);
@@ -281,14 +280,11 @@ function ProfileTab({ showToast, section }) {
       setForm(data);
       setDirty(false);
 
-      // Load custom social/action links from DB or localStorage
+      // Load custom social/action links from the live database.
       try {
         let links = [];
         if (data?.custom_links) {
           links = typeof data.custom_links === 'string' ? JSON.parse(data.custom_links) : data.custom_links;
-        } else {
-          const cached = localStorage.getItem(`nfc_card_custom_links_${siteId}`);
-          if (cached) links = JSON.parse(cached);
         }
         const normalizedLinks = Array.isArray(links)
           ? links.map((item) => (
@@ -331,11 +327,6 @@ function ProfileTab({ showToast, section }) {
       }
       if (data?.custom_qr_url) {
         try { localStorage.setItem('nfc_card_custom_qr_url', data.custom_qr_url); } catch (e) {}
-      } else {
-        const cachedQr = localStorage.getItem('nfc_card_custom_qr_url');
-        if (cachedQr) {
-          setForm((prev) => ({ ...prev, custom_qr_url: cachedQr }));
-        }
       }
     } catch (err) {
       showToast('Failed to load profile: ' + err.message, 'error');
@@ -459,8 +450,6 @@ function ProfileTab({ showToast, section }) {
       if (uploadError) throw uploadError;
       const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
       handleChange('site_icon_url', urlData.publicUrl);
-      applyFavicon(urlData.publicUrl);
-      try { localStorage.setItem('nfc_card_site_icon', urlData.publicUrl); } catch (e) {}
       showToast('Site icon uploaded successfully', 'success');
     } catch (err) {
       showToast('Icon upload failed: ' + err.message, 'error');
@@ -513,82 +502,31 @@ function ProfileTab({ showToast, section }) {
     }
     setSaving(true);
     try {
-      const { id, created_at, updated_at, ...updateData } = form;
+      const updateData = Object.fromEntries(
+        Object.entries(form).filter(([key, value]) => (
+          !['id', 'site_id', 'created_at', 'updated_at', 'custom_links'].includes(key)
+          && JSON.stringify(value) !== JSON.stringify(profile[key])
+        )),
+      );
       if (includeCustomLinks) {
         updateData.custom_links = customLinks;
         updateData.facebook = '';
         updateData.youtube = '';
-      } else {
-        delete updateData.custom_links;
       }
-      let migratingLegacySocials = includeCustomLinks;
-
-      let { error } = await supabase.from(profilesTable).update(updateData).eq('id', profile.id).eq('site_id', siteId);
-
-      // If custom_links, address_link, or custom_qr_url column does not exist yet in DB schema cache, retry without them
-      if (error && error.message) {
-        let retryData = { ...updateData };
-        let shouldRetry = false;
-        if (error.message.includes('custom_links')) {
-          delete retryData.custom_links;
-          if (includeCustomLinks) {
-            retryData.facebook = profile.facebook || '';
-            retryData.youtube = profile.youtube || '';
-            migratingLegacySocials = false;
-          }
-          shouldRetry = true;
-        }
-        if (error.message.includes('address_link')) {
-          delete retryData.address_link;
-          shouldRetry = true;
-        }
-        if (error.message.includes('custom_qr_url')) {
-          delete retryData.custom_qr_url;
-          shouldRetry = true;
-        }
-        if (shouldRetry) {
-          const retryResult = await supabase.from(profilesTable).update(retryData).eq('id', profile.id).eq('site_id', siteId);
-          error = retryResult.error;
-        }
+      if (Object.keys(updateData).length === 0) {
+        showToast('There are no changed fields to request.', 'error');
+        return;
       }
-
-      if (error) throw error;
-      const savedCustomLinks = includeCustomLinks ? customLinks : profile.custom_links;
-      const savedProfile = {
-        ...form,
-        ...(migratingLegacySocials ? { facebook: '', youtube: '' } : {}),
-        custom_links: savedCustomLinks,
-      };
-      setProfile(savedProfile);
-      setForm(savedProfile);
+      await submitEditRequest({
+        requestType: 'profile',
+        payload: updateData,
+        fields: updateData,
+      });
+      setProfile((current) => ({ ...current, ...updateData }));
       setDirty(false);
-      try {
-        if (includeCustomLinks) {
-          localStorage.setItem(`nfc_card_custom_links_${siteId}`, JSON.stringify(customLinks));
-        }
-        localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(savedProfile));
-        if (form.custom_qr_url !== undefined) {
-          localStorage.setItem('nfc_card_custom_qr_url', form.custom_qr_url || '');
-        }
-        if (form.theme_mode) {
-          localStorage.setItem('nfc_card_theme', form.theme_mode);
-          localStorage.removeItem('nfc_card_user_theme');
-          localStorage.removeItem('nfc_card_user_base');
-          sessionStorage.removeItem('nfc_card_user_theme');
-          sessionStorage.removeItem('nfc_card_user_base');
-        }
-        if (form.site_title) {
-          localStorage.setItem('nfc_card_site_title', form.site_title);
-          applySiteTitle(form.site_title, true);
-        }
-        if (form.site_icon_url) {
-          localStorage.setItem('nfc_card_site_icon', form.site_icon_url);
-          applyFavicon(form.site_icon_url);
-        }
-      } catch (e) {}
-      showToast('Profile & social buttons saved successfully!', 'success');
+      showToast('Change request sent. It will not update your live card until approved and published.', 'success');
     } catch (err) {
-      showToast('Save failed: ' + err.message, 'error');
+      showToast('Request failed: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -812,7 +750,7 @@ function ProfileTab({ showToast, section }) {
               onClick={handleSave}
               disabled={saving || !dirty}
             >
-              {saving ? 'Saving…' : 'Save Website Settings & Theme'}
+              {saving ? 'Submitting…' : 'Request approval'}
             </button>
           </div>
         </div>
@@ -880,7 +818,7 @@ function ProfileTab({ showToast, section }) {
             onClick={handleSave}
             disabled={saving || !dirty}
           >
-            {saving ? 'Saving…' : 'Save Profile'}
+            {saving ? 'Submitting…' : 'Request approval'}
           </button>
         </div>
       </div>
@@ -1028,7 +966,7 @@ function ProfileTab({ showToast, section }) {
             onClick={() => handleSave(true)}
             disabled={saving || !dirty}
           >
-            {saving ? 'Saving…' : 'Save Social Buttons'}
+            {saving ? 'Submitting…' : 'Request approval'}
           </button>
         </div>
       </div>
@@ -1149,7 +1087,7 @@ function ProfileTab({ showToast, section }) {
             onClick={() => handleSave(true)}
             disabled={saving || !dirty}
           >
-            {saving ? 'Saving…' : 'Save Payment QR Buttons'}
+            {saving ? 'Submitting…' : 'Request approval'}
           </button>
         </div>
       </div>
@@ -1171,7 +1109,7 @@ function ProfileTab({ showToast, section }) {
             </div>
             <h2 id="admin-remove-title">Remove this {pendingLinkRemoval.type === 'payment' ? 'payment QR' : 'button'}?</h2>
             <p id="admin-remove-description">
-              <strong>{pendingLinkRemoval.label}</strong> will be removed from your card. You can save the change when you’re ready.
+              <strong>{pendingLinkRemoval.label}</strong> will be included in an approval request when you submit the changes.
             </p>
             <div className="admin-confirm-actions">
               <button
@@ -1200,8 +1138,9 @@ function ProfileTab({ showToast, section }) {
 /* ============================================================
    Products Tab — Two Sections
    ============================================================ */
-function ProductsTab({ showToast }) {
+function ProductsTab({ showToast, submitEditRequest }) {
   const [products, setProducts] = useState([]);
+  const [productsDirty, setProductsDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -1219,6 +1158,7 @@ function ProductsTab({ showToast }) {
       if (error) throw error;
       const list = data || [];
       setProducts(list);
+      setProductsDirty(false);
       try {
         localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(list));
       } catch (e) {}
@@ -1302,56 +1242,54 @@ function ProductsTab({ showToast }) {
     setProductForm((prev) => ({ ...prev, gallery: prev.gallery.filter((_, i) => i !== index) }));
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!productForm.name.trim()) { showToast('Product name is required', 'error'); return; }
+    const nextProduct = {
+      ...(editingProduct || {}),
+      name: productForm.name,
+      description: productForm.description,
+      price: productForm.price,
+      is_featured: productForm.is_featured,
+      image_url: productForm.image_url,
+      gallery: productForm.gallery || [],
+    };
+    const nextProducts = editingProduct
+      ? products.map((product) => product.id === editingProduct.id ? nextProduct : product)
+      : [...products, { ...nextProduct, id: crypto.randomUUID(), sort_order: products.length }];
+    setProducts(nextProducts);
+    setProductsDirty(true);
+    showToast('Product changes staged. Submit them for administrator approval when ready.', 'success');
+    closeForm();
+  };
+
+  const handleDelete = (product) => {
+    if (!window.confirm('Delete "' + product.name + '"? This cannot be undone.')) return;
+    setProducts(products.filter((item) => item.id !== product.id));
+    setProductsDirty(true);
+    showToast('Product removal staged. Submit the changes for administrator approval.', 'success');
+  };
+
+  const toggleFeatured = (product) => {
+    setProducts(products.map((item) => item.id === product.id
+      ? { ...item, is_featured: !item.is_featured }
+      : item));
+    setProductsDirty(true);
+  };
+
+  const handleRequestApproval = async () => {
     setSaving(true);
     try {
-      const payload = {
-        site_id: siteId,
-        name: productForm.name,
-        description: productForm.description,
-        price: productForm.price,
-        is_featured: productForm.is_featured,
-        image_url: productForm.image_url,
-        gallery: productForm.gallery || [],
-      };
-      if (editingProduct) {
-        const { error } = await supabase.from(productsTable).update(payload).eq('id', editingProduct.id).eq('site_id', siteId);
-        if (error) throw error;
-        showToast('Product updated!', 'success');
-      } else {
-        const { error } = await supabase.from(productsTable).insert([payload]);
-        if (error) throw error;
-        showToast('Product added!', 'success');
-      }
-      closeForm();
-      await fetchProducts();
+      await submitEditRequest({
+        requestType: 'products',
+        payload: products,
+        fields: { products: products.length },
+      });
+      setProductsDirty(false);
+      showToast('Product change request sent. Live products remain unchanged until approved and published.', 'success');
     } catch (err) {
-      showToast('Save failed: ' + err.message, 'error');
+      showToast('Request failed: ' + err.message, 'error');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleDelete = async (product) => {
-    if (!window.confirm('Delete "' + product.name + '"? This cannot be undone.')) return;
-    try {
-      const { error } = await supabase.from(productsTable).delete().eq('id', product.id).eq('site_id', siteId);
-      if (error) throw error;
-      showToast('Product deleted', 'success');
-      await fetchProducts();
-    } catch (err) {
-      showToast('Delete failed: ' + err.message, 'error');
-    }
-  };
-
-  const toggleFeatured = async (product) => {
-    try {
-      const { error } = await supabase.from(productsTable).update({ is_featured: !product.is_featured }).eq('id', product.id).eq('site_id', siteId);
-      if (error) throw error;
-      await fetchProducts();
-    } catch (err) {
-      showToast('Update failed: ' + err.message, 'error');
     }
   };
 
@@ -1361,6 +1299,12 @@ function ProductsTab({ showToast }) {
 
   return (
     <>
+      <div className="admin-save-bar">
+        {productsDirty && <span className="admin-unsaved">● Product changes not submitted</span>}
+        <button className="admin-btn admin-btn-primary" type="button" onClick={handleRequestApproval} disabled={saving || !productsDirty}>
+          {saving ? 'Submitting…' : 'Request approval for product changes'}
+        </button>
+      </div>
       {/* ── Section 1: Featured Products ── */}
       <div className="admin-card">
         <h3 className="admin-card-title">⭐ Featured Products — Main Card</h3>
@@ -1444,8 +1388,8 @@ function ProductsTab({ showToast }) {
             </div>
 
             <div className="admin-product-form-actions">
-              <button className="admin-btn admin-btn-primary" onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving…' : editingProduct ? 'Update Product' : 'Add Product'}
+              <button className="admin-btn admin-btn-primary" onClick={handleSave} disabled={saving || uploading || uploadingGallery}>
+                Stage product changes
               </button>
               <button className="admin-btn admin-btn-outline" onClick={closeForm} disabled={saving}>Cancel</button>
             </div>
@@ -1502,6 +1446,20 @@ function Admin() {
   });
   const [toast, setToast] = useState(null);
   const [businessName, setBusinessName] = useState('');
+
+  const submitEditRequest = useCallback(async ({ requestType, payload, fields, notes = '' }) => {
+    if (!session?.user) throw new Error('Sign in again before requesting changes.');
+    const { error } = await supabase.from('site_edit_requests').insert({
+      site_id: siteId,
+      user_id: session.user.id,
+      client_email: session.user.email || '',
+      request_type: requestType,
+      payload,
+      fields,
+      notes,
+    });
+    if (error) throw error;
+  }, [session]);
 
   useEffect(() => {
     try {
@@ -1689,10 +1647,13 @@ function Admin() {
             })[activeSection]}</p>
           </div>
         </div>
+        <p className="admin-approval-notice">
+          Changes submitted here are requests only. A super administrator must approve them into a private draft and separately publish that draft before the live card changes.
+        </p>
         <div hidden={activeSection === 'products'}>
-          <ProfileTab showToast={showToast} section={activeSection} />
+          <ProfileTab showToast={showToast} section={activeSection} submitEditRequest={submitEditRequest} />
         </div>
-        {activeSection === 'products' && <ProductsTab showToast={showToast} />}
+        {activeSection === 'products' && <ProductsTab showToast={showToast} submitEditRequest={submitEditRequest} />}
       </main>
       </div>
 
