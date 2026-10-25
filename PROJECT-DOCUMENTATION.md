@@ -70,11 +70,27 @@ display.
 - **Vite** serves the development app and builds the site.
 - **qrcode.react** renders the QR code.
 - **Firebase Hosting** serves each site's production build from `dist`.
-- Managed sites share the Supabase project but store profile and product data
-  in tenant-scoped tables keyed by `site_id`. Public profile and product rows
-  are read-only to browser roles. Assigned clients can submit tenant-scoped
-  review requests, while only the super-admin service function can change the
-  private draft and publish it to live rows after explicit confirmation.
+- All card URLs are separate Firebase Hosting sites in the same Firebase
+  project, and they connect to the same Supabase project. A `site_id` is the
+  database label that identifies which site's records a request belongs to.
+  Every site uses dedicated profile and product tables, and its table mapping
+  is registered on its `managed_sites` row. The super-admin and publishing
+  function resolve tables from that registry rather than maintaining per-site
+  code branches.
+- Edit requests, drafts, and admin activity are shared workflow tables keyed
+  by `site_id`. Dedicated content tables have foreign keys back to their
+  managed site. Browser roles can read public card content but cannot write
+  live content. Assigned clients submit review requests; only the
+  super-admin service function can update drafts or publish content.
+
+Each physical tenant table is linked to its `managed_sites` row by a foreign
+key. `managed_sites` is the authoritative table registry, and unique indexes
+prevent two independent sites from being mapped to the same tenant table.
+`site_admins` also has a composite key and a foreign key to managed sites.
+Request, assignment, and activity indexes support site-scoped lookups as those
+tables grow. Site creation calls a service-role-only database function that
+creates the site's profile and product tables, access policies, blank profile,
+registry entry, and client assignment in one transaction.
 
 | Path | Purpose |
 | --- | --- |
@@ -97,22 +113,25 @@ Copy `.env.example` to `.env.local` and set the Supabase project URL and anon
 key. These are Vite public variables and are included in the browser build; do
 not use a Supabase service-role key here.
 
-Before deploying this site for the first time, run
+For a new database setup, run
 [`isolate-calling-card-d1.sql`](./isolate-calling-card-d1.sql) in the existing
-Supabase project's SQL Editor. It creates dedicated tables using the existing
-tables' schema, grants public read access, restricts writes to accounts
-assigned to this site, and creates an empty profile row. It does not copy or
-modify the other site's business data.
+Supabase project's SQL Editor if the legacy D1 source tables do not exist yet.
+The multi-site migration below copies their data into the current shared
+site-scoped tables; it does not delete the source tables.
 
 ### Multi-site super-admin access
 
-All managed public sites use `site_profiles` and `site_products` in one
-Supabase project, with a `site_id` on each row. Row Level Security checks each
-client's site assignment for edit-request submissions; browser roles cannot
-write directly to live profile/product rows. Public profile, product, and
-image reads remain public because this content is displayed on the card; do
-not put private customer information in these tables or the public image
-bucket.
+All managed sites use one Supabase project, but each site is identified by its
+own `site_id` and has its own profile and product tables. Firebase Hosting URLs
+do not select or isolate database records; the site's build configuration
+supplies its `site_id` and table names. The super-admin looks up each site's
+registered profile/product table before editing or publishing.
+
+Public profile, product, and image reads remain public because this content is
+displayed on the card; do not put private customer information in these tables
+or the public image bucket. Browser roles cannot write live profile/product
+rows. Clients submit edit requests, and the super-admin reviews and publishes
+those changes.
 
 The owner portal is served from `https://superadmin-callingcard.web.app`.
 Client accounts use unique email addresses within the shared Supabase Auth
@@ -139,6 +158,21 @@ The managed tenants are:
 | Calling Card D10 | `calling-card-d10` | `https://calling-card-d10.web.app` |
 | Remo Contacts | `main` | `https://remo-contacts.web.app` |
 | Aljon Contacts | `aljon-contacts` | `https://calling-card.web.app` |
+
+Calling Card D1 uses `calling_card_d1_profiles` and
+`calling_card_d1_products`; Remo uses `calling_card_remo_profiles` and
+`calling_card_remo_products`; Aljon uses `calling_card_aljon_contacts_profiles`
+and `calling_card_aljon_contacts_products`. They use the same dedicated-table
+pattern as D2–D10. After the multi-site migration, run
+[`calling-card-d1-database.sql`](./calling-card-d1-database.sql),
+[`remo-contacts-database.sql`](./remo-contacts-database.sql), and
+[`aljon-contacts-database.sql`](./aljon-contacts-database.sql) once. These
+scripts preserve the shared-table rows while copying them into the dedicated
+tables, switch the registry only after the copy succeeds, and retain the
+shared rows as a rollback reference. They are safe to rerun and will not
+overwrite dedicated content after the registry has switched.
+Build and deploy D1 with `npm run deploy:d1`, Remo with `npm run deploy:remo`,
+and Aljon with `npm run deploy:aljon`.
 
 Calling Card D2 uses dedicated `calling_card_d2_profiles` and
 `calling_card_d2_products` tables. Run
@@ -208,28 +242,55 @@ Aljon Contacts uses the Remo app template but has its own empty profile,
 product list, local cache namespace, and `aljon-contacts/` image-storage path.
 Build and deploy it with `npm run deploy:aljon`; this uses its own Firebase
 Hosting target and does not deploy to the Remo or Calling Card D1 targets.
+Remo and Aljon each use their own dedicated profile/product tables despite
+sharing the same app template.
+
+For future sites, use **Add a site** in the super-admin portal so the database
+registry, dedicated content tables, blank profile, and client assignment are
+created together. Build/deploy that site with its matching `VITE_SITE_ID`,
+`VITE_PROFILES_TABLE`, and `VITE_PRODUCTS_TABLE`. Creating tables by copying an
+old tenant SQL file bypasses this registry and assignment workflow.
+
+Schema changes to the `site_profiles` or `site_products` table templates do
+not automatically alter already-created dedicated tenant tables. When adding
+or changing a content column, update all registered dedicated content tables
+in the same reviewed SQL migration, and test the portal editor and publish
+flow before deployment.
 
 One-time setup:
 
 1. In Supabase SQL Editor, run `secure-client-auth.sql` if it has not already
-   been applied, then run
-   [`multi-site-super-admin.sql`](./multi-site-super-admin.sql). The migration
-   copies the existing `calling-card-d1` and `main` profile/product data into
-   the new site-scoped tables. Review the copied data before removing any old
-   tables; the migration does not drop the legacy tables. Re-run this
-   idempotent migration after pulling dashboard updates to create the edit
-   request, payment tracking, activity, site content draft tables/functions,
-   and request-summary function. It revokes browser-role writes to live
-   profiles/products and permits assigned clients to access the request flow
-   independently of payment status; the super-admin confirms a draft summary
-   before publishing it.
+   been applied. Ensure the legacy D1 source tables exist by running
+   [`isolate-calling-card-d1.sql`](./isolate-calling-card-d1.sql) if needed,
+   then run [`multi-site-super-admin.sql`](./multi-site-super-admin.sql).
+   This migration prepares the shared schema and copies existing D1 and Remo
+   data into it as a safe transition source. Then run the D1, Remo, and Aljon
+   dedicated-table scripts listed above. They copy the site-specific rows into
+   each dedicated table and update each registry mapping without deleting the
+   shared source rows. For D2–D10, run each matching
+   `calling-card-dN-database.sql` file if its dedicated tables have not
+   already been created. Review the sites in the super-admin before any
+   cleanup of old tables or shared rows.
+   To verify each registry mapping and confirm its tables exist, run:
+
+   ```sql
+   SELECT
+     site_id,
+     name,
+     profile_table,
+     to_regclass(format('public.%I', profile_table)) IS NOT NULL AS profile_table_exists,
+     products_table,
+     to_regclass(format('public.%I', products_table)) IS NOT NULL AS products_table_exists
+   FROM public.managed_sites
+   ORDER BY name;
+   ```
+
 2. Create or use your owner account in **Authentication → Users**. Run the
    super-admin assignment query at the end of `multi-site-super-admin.sql`
    with your own account email. Enable MFA on this owner account and disable
    public sign-ups in Supabase Auth settings.
 3. From a terminal, install/use the Supabase CLI, log in, and link this
    repository to the correct project:
-
    ```powershell
    npx supabase login
    npx supabase link --project-ref YOUR_PROJECT_REF
@@ -285,17 +346,37 @@ request is approved, although the live card does not reference them.
    rebuild. The confirmation warns when the site has not been marked paid, but
    publishing remains available.
 
-5. To create a client site in the portal, enter its unique site ID, public
-   HTTPS URL, client's unique email, and a password of 12–128 characters.
-   Confirm the password, then deliver it using a secure channel. Build each
-   client's website with that same ID as `VITE_SITE_ID`; this ensures it only
-   loads that site's rows:
+5. To create a client site in the portal, enter its unique site ID (2–40
+   lowercase letters, numbers, or hyphens), public HTTPS URL, client's unique
+   email, and a password of 12–128 characters. The database provisions that
+   site's profile table, product table, blank profile row, and client
+   assignment in one transaction. If provisioning fails, the transaction
+   leaves no partial site or tables; the server removes the newly created Auth
+   account. Confirm the password, then deliver it using a secure channel.
+
+   For IDs such as `calling-card-d11`, build the matching tenant with:
+
+   ```powershell
+   npm run build:tenant -- --mode d11
+   ```
+
+   For a custom site ID, provide that ID and its generated table names as Vite
+   environment variables. Replace hyphens with underscores, remove the
+   leading `calling-card-` if present, then use the result between
+   `calling_card_` and `_profiles` or `_products`:
 
    ```powershell
    $env:VITE_SITE_ID = "client-site-id"
-   npm run build
+   $env:VITE_PROFILES_TABLE = "calling_card_client_site_id_profiles"
+   $env:VITE_PRODUCTS_TABLE = "calling_card_client_site_id_products"
+   npm run build:tenant
    Remove-Item Env:VITE_SITE_ID
+   Remove-Item Env:VITE_PROFILES_TABLE
+   Remove-Item Env:VITE_PRODUCTS_TABLE
    ```
+
+   The Firebase Hosting site and target still need to exist and be configured
+   before deploying the resulting `dist` build.
 
 The SQL migrations and Edge Function must be deployed before publishing the
 super-admin frontend. The browser only provides the interface; all privileged
@@ -315,17 +396,15 @@ npm run build
 npm run preview
 ```
 
-Deploy only this site's Hosting target:
+Deploy Calling Card D1 to its own Hosting target:
 
 ```sh
-npm run deploy:main
+npm run deploy:d1
 ```
 
-The `calling-card-d1` Hosting target serves `https://calling-card-d1.web.app`
-with the `calling-card-d1` data tenant. The `aljon-contacts-hosting` target
-serves `https://calling-card.web.app` and must be built with the `aljon` mode
-so it uses the separate `aljon-contacts` data tenant. `npm run deploy:main`
-and `npm run deploy:aljon` both build and deploy that Aljon Contacts site.
+`npm run deploy:remo` serves `https://remo-contacts.web.app`; the
+`aljon-contacts-hosting` target serves `https://calling-card.web.app`.
+Each build mode selects its site's own `site_id` and dedicated data tables.
 
 ## Client discovery and content checklist
 

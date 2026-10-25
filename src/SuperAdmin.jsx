@@ -766,7 +766,7 @@ function SuperAdmin() {
               <div><p className="superadmin-eyebrow">NEW WORKSPACE</p><h2>Add a site and client</h2><p className="superadmin-section-note">Register a site and create its initial client login.</p></div>
             </div>
             <form className="superadmin-form superadmin-create-form" onSubmit={handleCreateSite}>
-              <label>Site ID<input value={form.site_id} onChange={(event) => setForm({ ...form, site_id: event.target.value })} placeholder="e.g. acme-cards" pattern="[a-z0-9][a-z0-9-]{1,62}" required /></label>
+              <label>Site ID<input value={form.site_id} onChange={(event) => setForm({ ...form, site_id: event.target.value })} placeholder="e.g. acme-cards" pattern="[a-z0-9][a-z0-9-]{1,39}" maxLength={40} required /></label>
               <label>Business / site name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Acme Business" maxLength={120} required /></label>
               <label>Public website URL<input type="url" value={form.public_url} onChange={(event) => setForm({ ...form, public_url: event.target.value })} placeholder="https://acme.web.app" required /></label>
               <label>Client email<input type="email" value={form.client_email} onChange={(event) => setForm({ ...form, client_email: event.target.value })} placeholder="client@example.com" required /></label>

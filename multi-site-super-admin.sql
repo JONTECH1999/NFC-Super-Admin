@@ -1,4 +1,4 @@
--- Shared multi-site data and super-admin access.
+-- Tenant registry, isolated per-site content tables, and super-admin access.
 -- Run in the Supabase SQL Editor as the project owner after secure-client-auth.sql.
 BEGIN;
 
@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS public.managed_sites (
   client_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   client_enabled boolean NOT NULL DEFAULT true,
   is_active boolean NOT NULL DEFAULT true,
+  profile_table text NOT NULL DEFAULT 'site_profiles',
+  products_table text NOT NULL DEFAULT 'site_products',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -18,6 +20,40 @@ ALTER TABLE public.managed_sites
 ALTER TABLE public.managed_sites
   ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'none'
   CHECK (payment_status IN ('none', 'awaiting_payment', 'paid'));
+ALTER TABLE public.managed_sites
+  ADD COLUMN IF NOT EXISTS profile_table text NOT NULL DEFAULT 'site_profiles',
+  ADD COLUMN IF NOT EXISTS products_table text NOT NULL DEFAULT 'site_products';
+CREATE INDEX IF NOT EXISTS managed_sites_created_idx
+  ON public.managed_sites (created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS managed_sites_profile_table_unique_idx
+  ON public.managed_sites (profile_table)
+  WHERE profile_table <> 'site_profiles';
+CREATE UNIQUE INDEX IF NOT EXISTS managed_sites_products_table_unique_idx
+  ON public.managed_sites (products_table)
+  WHERE products_table <> 'site_products';
+
+DO $constraints$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'managed_sites_profile_table_check'
+      AND conrelid = 'public.managed_sites'::regclass
+  ) THEN
+    ALTER TABLE public.managed_sites
+      ADD CONSTRAINT managed_sites_profile_table_check
+      CHECK (profile_table ~ '^(site_profiles|calling_card_[a-z0-9_]+_profiles)$');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'managed_sites_products_table_check'
+      AND conrelid = 'public.managed_sites'::regclass
+  ) THEN
+    ALTER TABLE public.managed_sites
+      ADD CONSTRAINT managed_sites_products_table_check
+      CHECK (products_table ~ '^(site_products|calling_card_[a-z0-9_]+_products)$');
+  END IF;
+END;
+$constraints$;
 ALTER TABLE public.managed_sites ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.managed_sites FROM anon, authenticated;
 GRANT ALL ON public.managed_sites TO service_role;
@@ -175,6 +211,170 @@ ON CONFLICT (site_id) DO NOTHING;
 INSERT INTO public.managed_sites (site_id, name, public_url)
 VALUES ('main', 'Remo Contacts', 'https://remo-contacts.web.app')
 ON CONFLICT (site_id) DO NOTHING;
+INSERT INTO public.managed_sites (site_id, name, public_url)
+VALUES ('aljon-contacts', 'Aljon Contacts', 'https://calling-card.web.app')
+ON CONFLICT (site_id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION public.provision_managed_site(
+  target_site_id text,
+  target_name text,
+  target_public_url text,
+  target_client_email text,
+  target_client_user_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+  profile_table text;
+  products_table text;
+  table_suffix text;
+BEGIN
+  IF auth.role() IS DISTINCT FROM 'service_role' THEN
+    RAISE EXCEPTION 'Service-role access is required to provision a managed site.';
+  END IF;
+  IF target_site_id IS NULL
+    OR length(target_site_id) > 40
+    OR target_site_id !~ '^[a-z0-9][a-z0-9-]{1,39}$'
+    OR target_site_id = 'main' THEN
+    RAISE EXCEPTION 'Site IDs must contain 2-40 lowercase letters, numbers, or hyphens and cannot be main.';
+  END IF;
+  IF target_name IS NULL OR length(btrim(target_name)) NOT BETWEEN 1 AND 120 THEN
+    RAISE EXCEPTION 'Site names must contain between 1 and 120 characters.';
+  END IF;
+  IF target_public_url IS NULL OR target_public_url !~ '^https://' THEN
+    RAISE EXCEPTION 'Managed site URLs must use HTTPS.';
+  END IF;
+  IF target_client_email IS NULL
+    OR target_client_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'
+    OR target_client_user_id IS NULL THEN
+    RAISE EXCEPTION 'A valid assigned client account is required.';
+  END IF;
+
+  table_suffix := regexp_replace(target_site_id, '^calling-card-', '');
+  table_suffix := replace(table_suffix, '-', '_');
+  profile_table := 'calling_card_' || table_suffix || '_profiles';
+  products_table := 'calling_card_' || table_suffix || '_products';
+
+  INSERT INTO public.managed_sites (
+    site_id, name, public_url, client_email, client_user_id,
+    profile_table, products_table
+  )
+  VALUES (
+    target_site_id, btrim(target_name), target_public_url,
+    lower(btrim(target_client_email)), target_client_user_id,
+    profile_table, products_table
+  );
+
+  EXECUTE format(
+    'CREATE TABLE public.%I (LIKE public.site_profiles INCLUDING ALL)',
+    profile_table
+  );
+  EXECUTE format(
+    'CREATE TABLE public.%I (LIKE public.site_products INCLUDING ALL)',
+    products_table
+  );
+  EXECUTE format(
+    'ALTER TABLE public.%I ADD CONSTRAINT tenant_site_id_fkey FOREIGN KEY (site_id) REFERENCES public.managed_sites(site_id) ON DELETE CASCADE',
+    profile_table
+  );
+  EXECUTE format(
+    'ALTER TABLE public.%I ADD CONSTRAINT tenant_site_id_fkey FOREIGN KEY (site_id) REFERENCES public.managed_sites(site_id) ON DELETE CASCADE',
+    products_table
+  );
+  EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', profile_table);
+  EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', products_table);
+  EXECUTE format('REVOKE ALL ON public.%I FROM anon, authenticated', profile_table);
+  EXECUTE format('REVOKE ALL ON public.%I FROM anon, authenticated', products_table);
+  EXECUTE format('GRANT ALL ON public.%I TO service_role', profile_table);
+  EXECUTE format('GRANT ALL ON public.%I TO service_role', products_table);
+  EXECUTE format('GRANT SELECT ON public.%I TO anon, authenticated', profile_table);
+  EXECUTE format('GRANT SELECT ON public.%I TO anon, authenticated', products_table);
+  EXECUTE format(
+    'CREATE POLICY tenant_public_read ON public.%I FOR SELECT TO anon, authenticated USING (true)',
+    profile_table
+  );
+  EXECUTE format(
+    'CREATE POLICY tenant_public_read ON public.%I FOR SELECT TO anon, authenticated USING (true)',
+    products_table
+  );
+  EXECUTE format(
+    'INSERT INTO public.%I (site_id) VALUES ($1)',
+    profile_table
+  ) USING target_site_id;
+
+  INSERT INTO public.site_admins (site_id, user_id)
+  VALUES (target_site_id, target_client_user_id);
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.provision_managed_site(text, text, text, text, uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.provision_managed_site(text, text, text, text, uuid)
+  TO service_role;
+
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d2_profiles',
+    products_table = 'calling_card_d2_products'
+WHERE site_id = 'calling-card-d2';
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d3_profiles',
+    products_table = 'calling_card_d3_products'
+WHERE site_id = 'calling-card-d3';
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d4_profiles',
+    products_table = 'calling_card_d4_products'
+WHERE site_id = 'calling-card-d4';
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d5_profiles',
+    products_table = 'calling_card_d5_products'
+WHERE site_id = 'calling-card-d5';
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d6_profiles',
+    products_table = 'calling_card_d6_products'
+WHERE site_id = 'calling-card-d6';
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d7_profiles',
+    products_table = 'calling_card_d7_products'
+WHERE site_id = 'calling-card-d7';
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d8_profiles',
+    products_table = 'calling_card_d8_products'
+WHERE site_id = 'calling-card-d8';
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d9_profiles',
+    products_table = 'calling_card_d9_products'
+WHERE site_id = 'calling-card-d9';
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d10_profiles',
+    products_table = 'calling_card_d10_products'
+WHERE site_id = 'calling-card-d10';
+
+DO $constraints$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.site_admins AS assignment
+    LEFT JOIN public.managed_sites AS site ON site.site_id = assignment.site_id
+    WHERE site.site_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Cannot add site-admin integrity constraint: site_admins contains an assignment for an unknown site.';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'site_admins_site_id_fkey'
+      AND conrelid = 'public.site_admins'::regclass
+  ) THEN
+    ALTER TABLE public.site_admins
+      ADD CONSTRAINT site_admins_site_id_fkey
+      FOREIGN KEY (site_id) REFERENCES public.managed_sites(site_id)
+      ON DELETE CASCADE;
+  END IF;
+END;
+$constraints$;
+CREATE INDEX IF NOT EXISTS site_admins_user_site_idx
+  ON public.site_admins (user_id, site_id);
 
 UPDATE public.managed_sites AS site
 SET client_user_id = assignment.user_id,
@@ -208,6 +408,10 @@ SELECT
 FROM public.profiles
 ORDER BY created_at
 LIMIT 1
+ON CONFLICT (site_id) DO NOTHING;
+
+INSERT INTO public.site_profiles (site_id)
+VALUES ('aljon-contacts')
 ON CONFLICT (site_id) DO NOTHING;
 
 INSERT INTO public.site_products (
@@ -334,6 +538,13 @@ ALTER TABLE public.site_edit_requests
     CHECK (email_status IN ('not_required', 'pending', 'sending', 'sent', 'failed'));
 CREATE INDEX IF NOT EXISTS site_edit_requests_status_created_idx
   ON public.site_edit_requests (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS site_edit_requests_site_status_created_idx
+  ON public.site_edit_requests (site_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS site_edit_requests_user_created_idx
+  ON public.site_edit_requests (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS site_edit_requests_pending_site_created_idx
+  ON public.site_edit_requests (site_id, created_at DESC)
+  WHERE status = 'pending';
 ALTER TABLE public.site_edit_requests ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.site_edit_requests FROM anon, authenticated;
 GRANT SELECT, INSERT ON public.site_edit_requests TO authenticated;
@@ -388,6 +599,8 @@ CREATE TABLE IF NOT EXISTS public.super_admin_activity (
 );
 CREATE INDEX IF NOT EXISTS super_admin_activity_created_idx
   ON public.super_admin_activity (created_at DESC);
+CREATE INDEX IF NOT EXISTS super_admin_activity_site_created_idx
+  ON public.super_admin_activity (site_id, created_at DESC);
 ALTER TABLE public.super_admin_activity ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.super_admin_activity FROM anon, authenticated;
 GRANT ALL ON public.super_admin_activity TO service_role;
@@ -443,30 +656,17 @@ BEGIN
     RAISE EXCEPTION 'Save a draft before publishing.';
   END IF;
 
-  profile_table := CASE
-    WHEN target_site_id = 'calling-card-d2' THEN 'calling_card_d2_profiles'
-    WHEN target_site_id = 'calling-card-d3' THEN 'calling_card_d3_profiles'
-    WHEN target_site_id = 'calling-card-d4' THEN 'calling_card_d4_profiles'
-    WHEN target_site_id = 'calling-card-d5' THEN 'calling_card_d5_profiles'
-    WHEN target_site_id = 'calling-card-d6' THEN 'calling_card_d6_profiles'
-    WHEN target_site_id = 'calling-card-d7' THEN 'calling_card_d7_profiles'
-    WHEN target_site_id = 'calling-card-d8' THEN 'calling_card_d8_profiles'
-    WHEN target_site_id = 'calling-card-d9' THEN 'calling_card_d9_profiles'
-    WHEN target_site_id = 'calling-card-d10' THEN 'calling_card_d10_profiles'
-    ELSE 'site_profiles'
-  END;
-  products_table := CASE
-    WHEN target_site_id = 'calling-card-d2' THEN 'calling_card_d2_products'
-    WHEN target_site_id = 'calling-card-d3' THEN 'calling_card_d3_products'
-    WHEN target_site_id = 'calling-card-d4' THEN 'calling_card_d4_products'
-    WHEN target_site_id = 'calling-card-d5' THEN 'calling_card_d5_products'
-    WHEN target_site_id = 'calling-card-d6' THEN 'calling_card_d6_products'
-    WHEN target_site_id = 'calling-card-d7' THEN 'calling_card_d7_products'
-    WHEN target_site_id = 'calling-card-d8' THEN 'calling_card_d8_products'
-    WHEN target_site_id = 'calling-card-d9' THEN 'calling_card_d9_products'
-    WHEN target_site_id = 'calling-card-d10' THEN 'calling_card_d10_products'
-    ELSE 'site_products'
-  END;
+  SELECT site.profile_table, site.products_table
+  INTO profile_table, products_table
+  FROM public.managed_sites AS site
+  WHERE site.site_id = target_site_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Site data tables are not configured for this site.';
+  END IF;
+  IF to_regclass(format('public.%I', profile_table)) IS NULL
+    OR to_regclass(format('public.%I', products_table)) IS NULL THEN
+    RAISE EXCEPTION 'The configured profile or product table does not exist.';
+  END IF;
 
   EXECUTE format($query$
     INSERT INTO public.%I (

@@ -9,6 +9,11 @@ SET name = EXCLUDED.name,
     public_url = EXCLUDED.public_url,
     updated_at = now();
 
+UPDATE public.managed_sites
+SET profile_table = 'calling_card_d2_profiles',
+    products_table = 'calling_card_d2_products'
+WHERE site_id = 'calling-card-d2';
+
 CREATE TABLE IF NOT EXISTS public.calling_card_d2_profiles (
   LIKE public.site_profiles INCLUDING ALL
 );

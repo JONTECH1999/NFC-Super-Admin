@@ -49,30 +49,32 @@ const editableProfileFields = new Set([
   "custom_qr_url", "custom_links",
 ]);
 
-function profileTableForSite(siteId: string) {
-  if (siteId === "calling-card-d2") return "calling_card_d2_profiles";
-  if (siteId === "calling-card-d3") return "calling_card_d3_profiles";
-  if (siteId === "calling-card-d4") return "calling_card_d4_profiles";
-  if (siteId === "calling-card-d5") return "calling_card_d5_profiles";
-  if (siteId === "calling-card-d6") return "calling_card_d6_profiles";
-  if (siteId === "calling-card-d7") return "calling_card_d7_profiles";
-  if (siteId === "calling-card-d8") return "calling_card_d8_profiles";
-  if (siteId === "calling-card-d9") return "calling_card_d9_profiles";
-  if (siteId === "calling-card-d10") return "calling_card_d10_profiles";
-  return "site_profiles";
+function isAllowedDataTable(tableName: unknown, kind: "profiles" | "products") {
+  if (typeof tableName !== "string") return false;
+  const sharedTable = kind === "profiles" ? "site_profiles" : "site_products";
+  return tableName === sharedTable
+    || new RegExp(`^calling_card_[a-z0-9_]+_${kind}$`).test(tableName);
 }
 
-function productsTableForSite(siteId: string) {
-  if (siteId === "calling-card-d2") return "calling_card_d2_products";
-  if (siteId === "calling-card-d3") return "calling_card_d3_products";
-  if (siteId === "calling-card-d4") return "calling_card_d4_products";
-  if (siteId === "calling-card-d5") return "calling_card_d5_products";
-  if (siteId === "calling-card-d6") return "calling_card_d6_products";
-  if (siteId === "calling-card-d7") return "calling_card_d7_products";
-  if (siteId === "calling-card-d8") return "calling_card_d8_products";
-  if (siteId === "calling-card-d9") return "calling_card_d9_products";
-  if (siteId === "calling-card-d10") return "calling_card_d10_products";
-  return "site_products";
+async function getSiteDataTables(
+  serviceClient: ReturnType<typeof createClient>,
+  siteId: string,
+) {
+  const { data, error } = await serviceClient
+    .from("managed_sites")
+    .select("profile_table, products_table")
+    .eq("site_id", siteId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error(`No managed site exists for "${siteId}".`);
+  if (!isAllowedDataTable(data.profile_table, "profiles")
+    || !isAllowedDataTable(data.products_table, "products")) {
+    throw new Error(`Managed site "${siteId}" has invalid profile or product table configuration.`);
+  }
+  return {
+    profileTable: data.profile_table,
+    productsTable: data.products_table,
+  };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -434,8 +436,9 @@ async function sendRejectedChangeEmails(
       && new Date(request.reviewed_at) <= new Date(publishedAt)
     )
   ));
+  const { profileTable } = await getSiteDataTables(serviceClient, siteId);
   const { data: siteProfile, error: profileError } = await serviceClient
-    .from(profileTableForSite(siteId))
+    .from(profileTable)
     .select("email")
     .eq("site_id", siteId)
     .maybeSingle();
@@ -654,17 +657,18 @@ Deno.serve(async (request) => {
       if (editRequest.status !== "pending") return invalid("This edit request is no longer pending.", origin);
       const productRequestError = validateProductRequestIds(editRequest);
       if (productRequestError) return invalid(productRequestError, origin);
+      const { profileTable, productsTable } = await getSiteDataTables(serviceClient, editRequest.site_id);
 
       const [draftResult, profileResult, productsResult] = await Promise.all([
         serviceClient.from("site_content_drafts")
           .select("profile, products")
           .eq("site_id", editRequest.site_id)
           .maybeSingle(),
-        serviceClient.from(profileTableForSite(editRequest.site_id))
+        serviceClient.from(profileTable)
           .select("*")
           .eq("site_id", editRequest.site_id)
           .maybeSingle(),
-        serviceClient.from(productsTableForSite(editRequest.site_id))
+        serviceClient.from(productsTable)
           .select("id, name, description, price, image_url, alt, gallery, is_featured, sort_order")
           .eq("site_id", editRequest.site_id)
           .order("sort_order"),
@@ -843,69 +847,34 @@ Deno.serve(async (request) => {
     if (body.action === "list_sites") {
       const { data: sites, error } = await serviceClient
         .from("managed_sites")
-        .select("site_id, name, public_url, client_email, client_user_id, client_enabled, is_active, payment_status, created_at")
+        .select("site_id, name, public_url, client_email, client_user_id, client_enabled, is_active, payment_status, profile_table, products_table, created_at")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      const [profilesResult, d2ProfilesResult, d3ProfilesResult, d4ProfilesResult, d5ProfilesResult, d6ProfilesResult, d7ProfilesResult, d8ProfilesResult, d9ProfilesResult, d10ProfilesResult, draftsResult, requestsResult] = await Promise.all([
-        serviceClient.from("site_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
-        serviceClient.from("calling_card_d2_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
-        serviceClient.from("calling_card_d3_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
-        serviceClient.from("calling_card_d4_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
-        serviceClient.from("calling_card_d5_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
-        serviceClient.from("calling_card_d6_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
-        serviceClient.from("calling_card_d7_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
-        serviceClient.from("calling_card_d8_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
-        serviceClient.from("calling_card_d9_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
-        serviceClient.from("calling_card_d10_profiles")
-          .select("site_id, name, business, phone, email, address, profile_image_url")
-          .limit(5000),
+      const managedSites = sites || [];
+      const profileTableNames = [...new Set(managedSites.map((site) => site.profile_table))];
+      for (const tableName of profileTableNames) {
+        if (!isAllowedDataTable(tableName, "profiles")) {
+          throw new Error("A managed site has invalid profile table configuration.");
+        }
+      }
+      const [profileResults, draftsResult, requestsResult] = await Promise.all([
+        Promise.all(profileTableNames.map(async (tableName) => {
+          const { data, error: profileError } = await serviceClient.from(tableName)
+            .select("site_id, name, business, phone, email, address, profile_image_url")
+            .limit(5000);
+          if (profileError) throw profileError;
+          return data || [];
+        })),
         serviceClient.from("site_content_drafts")
           .select("site_id, updated_at, published_at")
           .limit(5000),
         serviceClient.rpc("get_pending_site_request_summary"),
       ]);
-      if (profilesResult.error) throw profilesResult.error;
-      if (d2ProfilesResult.error) throw d2ProfilesResult.error;
-      if (d3ProfilesResult.error) throw d3ProfilesResult.error;
-      if (d4ProfilesResult.error) throw d4ProfilesResult.error;
-      if (d5ProfilesResult.error) throw d5ProfilesResult.error;
-      if (d6ProfilesResult.error) throw d6ProfilesResult.error;
-      if (d7ProfilesResult.error) throw d7ProfilesResult.error;
-      if (d8ProfilesResult.error) throw d8ProfilesResult.error;
-      if (d9ProfilesResult.error) throw d9ProfilesResult.error;
-      if (d10ProfilesResult.error) throw d10ProfilesResult.error;
       if (draftsResult.error) throw draftsResult.error;
       if (requestsResult.error) throw requestsResult.error;
 
       const profilesBySite = new Map([
-        ...(profilesResult.data || []),
-        ...(d2ProfilesResult.data || []),
-        ...(d3ProfilesResult.data || []),
-        ...(d4ProfilesResult.data || []),
-        ...(d5ProfilesResult.data || []),
-        ...(d6ProfilesResult.data || []),
-        ...(d7ProfilesResult.data || []),
-        ...(d8ProfilesResult.data || []),
-        ...(d9ProfilesResult.data || []),
-        ...(d10ProfilesResult.data || []),
+        ...profileResults.flat(),
       ].map((profile) => [profile.site_id, profile]));
       const draftsBySite = new Map((draftsResult.data || []).map((draft) => [draft.site_id, draft]));
       const requestsBySite = new Map((requestsResult.data || []).map((request) => [
@@ -952,23 +921,28 @@ Deno.serve(async (request) => {
     if (body.action === "get_site_editor") {
       const siteId = String(body.site_id || "").trim();
       if (!siteId) return invalid("A site ID is required.", origin);
+      const { data: site, error: siteError } = await serviceClient.from("managed_sites")
+        .select("site_id, name, payment_status, profile_table, products_table")
+        .eq("site_id", siteId)
+        .maybeSingle();
+      if (siteError) throw siteError;
+      if (!site) return jsonResponse({ error: "Site not found." }, 404, origin);
+      if (!isAllowedDataTable(site.profile_table, "profiles")
+        || !isAllowedDataTable(site.products_table, "products")) {
+        throw new Error(`Managed site "${siteId}" has invalid profile or product table configuration.`);
+      }
       const [
-        siteResult,
         profileResult,
         productsResult,
         draftResult,
         requestsResult,
         emailFollowupsResult,
       ] = await Promise.all([
-        serviceClient.from("managed_sites")
-          .select("site_id, name, payment_status")
-          .eq("site_id", siteId)
-          .maybeSingle(),
-        serviceClient.from(profileTableForSite(siteId))
+        serviceClient.from(site.profile_table)
           .select("*")
           .eq("site_id", siteId)
           .maybeSingle(),
-        serviceClient.from(productsTableForSite(siteId))
+        serviceClient.from(site.products_table)
           .select("id, name, description, price, image_url, alt, gallery, is_featured, sort_order")
           .eq("site_id", siteId)
           .order("sort_order"),
@@ -989,8 +963,6 @@ Deno.serve(async (request) => {
           .order("reviewed_at", { ascending: false })
           .limit(50),
       ]);
-      if (siteResult.error) throw siteResult.error;
-      if (!siteResult.data) return jsonResponse({ error: "Site not found." }, 404, origin);
       if (profileResult.error) throw profileResult.error;
       if (productsResult.error) throw productsResult.error;
       if (draftResult.error) throw draftResult.error;
@@ -1000,7 +972,11 @@ Deno.serve(async (request) => {
       const currentProducts = draftResult.data?.products ?? productsResult.data ?? [];
       const reviewableChanges = getLatestRequestChanges(requestsResult.data || [], currentProfile, currentProducts);
       return jsonResponse({
-        site: siteResult.data,
+        site: {
+          site_id: site.site_id,
+          name: site.name,
+          payment_status: site.payment_status,
+        },
         profile: currentProfile,
         products: currentProducts,
         live_profile: profileResult.data || {},
@@ -1114,8 +1090,8 @@ Deno.serve(async (request) => {
       const publicUrl = String(body.public_url || "").trim();
       const email = String(body.client_email || "").trim().toLowerCase();
       const password = body.password;
-      if (!/^[a-z0-9][a-z0-9-]{1,62}$/.test(siteId) || siteId === "main") {
-        return invalid("Use a site ID with 2–63 lowercase letters, numbers, or hyphens.", origin);
+      if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(siteId) || siteId === "main") {
+        return invalid("Use a site ID with 2–40 lowercase letters, numbers, or hyphens. The main site ID is reserved.", origin);
       }
       if (!name || name.length > 120) return invalid("Enter a site name up to 120 characters.", origin);
       let parsedUrl: URL;
@@ -1147,47 +1123,40 @@ Deno.serve(async (request) => {
       }
 
       const userId = createdUser.user.id;
-      const { error: siteError } = await serviceClient.from("managed_sites").insert({
-        site_id: siteId,
-        name,
-        public_url: parsedUrl.toString(),
-        client_email: email,
-        client_user_id: userId,
+      const { error: siteError } = await serviceClient.rpc("provision_managed_site", {
+        target_site_id: siteId,
+        target_name: name,
+        target_public_url: parsedUrl.toString(),
+        target_client_email: email,
+        target_client_user_id: userId,
       });
       if (siteError) {
         const userCleanupSucceeded = await deleteCreatedUser((id) => serviceClient.auth.admin.deleteUser(id), userId);
         if (!userCleanupSucceeded) {
+          console.error("Could not remove client account after site provisioning failed:", siteError.message);
           return jsonResponse({ error: "Site setup failed and the new client login could not be removed. Contact the system administrator." }, 500, origin);
         }
-        return jsonResponse({ error: siteError.code === "23505" ? "That site ID already exists." : "Could not save the site." }, 400, origin);
+        return jsonResponse({
+          error: siteError.code === "23505"
+            ? "That site ID or generated table name is already registered. Choose a different site ID."
+            : "Could not provision the site's isolated database tables and client assignment.",
+        }, 400, origin);
       }
 
-      const { error: profileError } = await serviceClient.from(profileTableForSite(siteId)).insert({ site_id: siteId });
-      if (profileError) {
-        const { error: siteCleanupError } = await serviceClient.from("managed_sites").delete().eq("site_id", siteId);
-        const userCleanupSucceeded = await deleteCreatedUser((id) => serviceClient.auth.admin.deleteUser(id), userId);
-        if (siteCleanupError || !userCleanupSucceeded) {
-          console.error("Could not fully roll back site creation:", siteCleanupError?.message || "Client user cleanup failed.");
-          return jsonResponse({ error: "Site setup failed and cleanup was incomplete. Contact the system administrator." }, 500, origin);
-        }
-        throw profileError;
-      }
-      const { error: assignmentError } = await serviceClient.from("site_admins").insert({
-        site_id: siteId,
-        user_id: userId,
-      });
-      if (assignmentError) {
-        const { error: siteCleanupError } = await serviceClient.from("managed_sites").delete().eq("site_id", siteId);
-        const userCleanupSucceeded = await deleteCreatedUser((id) => serviceClient.auth.admin.deleteUser(id), userId);
-        if (siteCleanupError || !userCleanupSucceeded) {
-          console.error("Could not fully roll back site creation:", siteCleanupError?.message || "Client user cleanup failed.");
-          return jsonResponse({ error: "Site setup failed and cleanup was incomplete. Contact the system administrator." }, 500, origin);
-        }
-        throw assignmentError;
-      }
       await recordActivity(siteId, "site_created", `Created ${name} and assigned client access to ${email}.`);
+      const tableSuffix = siteId.replace(/^calling-card-/, "").replace(/-/g, "_");
       return jsonResponse({
-        site: { site_id: siteId, name, public_url: parsedUrl.toString(), client_email: email, client_user_id: userId, client_enabled: true, is_active: true },
+        site: {
+          site_id: siteId,
+          name,
+          public_url: parsedUrl.toString(),
+          client_email: email,
+          client_user_id: userId,
+          client_enabled: true,
+          is_active: true,
+          profile_table: `calling_card_${tableSuffix}_profiles`,
+          products_table: `calling_card_${tableSuffix}_products`,
+        },
       }, 201, origin);
     }
 
