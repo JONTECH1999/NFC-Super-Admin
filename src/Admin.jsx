@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useId } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { profilesTable, productsTable, siteId, supabase, supabaseUrl } from './lib/supabase';
 import { applyFavicon, applySiteTitle } from './lib/siteSettings';
@@ -24,6 +24,37 @@ const CACHE_SCOPE = (() => {
 })();
 
 const PRODUCTS_CACHE_KEY = `nfc_card_products_cache_${CACHE_SCOPE}_${siteId}`;
+const ADMIN_SECTION_KEY = `nfc_admin_section_${CACHE_SCOPE}_${siteId}`;
+
+function getAdminDraftKey(userId, section) {
+  return `nfc_admin_draft_${CACHE_SCOPE}_${siteId}_${userId}_${section}`;
+}
+
+function readAdminDraft(key) {
+  try {
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : null;
+  } catch (error) {
+    console.error('Unable to restore client admin draft:', error);
+    return null;
+  }
+}
+
+function writeAdminDraft(key, draft) {
+  try {
+    localStorage.setItem(key, JSON.stringify(draft));
+  } catch (error) {
+    console.error('Unable to save client admin draft:', error);
+  }
+}
+
+function clearAdminDraft(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.error('Unable to clear client admin draft:', error);
+  }
+}
 
 /* ============================================================
    Toast Component
@@ -274,7 +305,7 @@ function RequiredPasswordChange({ session, onComplete }) {
 /* ============================================================
    Profile Tab
    ============================================================ */
-function ProfileTab({ showToast, section, submitEditRequest, requiresPublicationConfirmation = false }) {
+function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresPublicationConfirmation = false }) {
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(true);
@@ -282,6 +313,8 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
   const [uploading, setUploading] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [formDirty, setFormDirty] = useState(false);
+  const [customLinksDirty, setCustomLinksDirty] = useState(false);
   const [publicationConfirmed, setPublicationConfirmed] = useState(false);
   const [customLinks, setCustomLinks] = useState([]);
   const [pendingLinkRemoval, setPendingLinkRemoval] = useState(null);
@@ -295,8 +328,16 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
       const { data, error } = await supabase.from(profilesTable).select('*').eq('site_id', siteId).single();
       if (error) throw error;
       setProfile(data);
-      setForm(data);
-      setDirty(false);
+      const draft = readAdminDraft(draftKey);
+      const hasDraft = draft?.version === 1
+        && draft.form
+        && typeof draft.form === 'object'
+        && (draft.formDirty || draft.customLinksDirty);
+      const restoredForm = hasDraft ? { ...data, ...draft.form } : data;
+      setForm(restoredForm);
+      setDirty(Boolean(hasDraft));
+      setFormDirty(Boolean(hasDraft && draft.formDirty));
+      setCustomLinksDirty(Boolean(hasDraft && draft.customLinksDirty));
 
       // Load custom social/action links from the live database.
       try {
@@ -330,14 +371,14 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
             });
           }
         });
-        setCustomLinks(normalizedLinks);
+        setCustomLinks(hasDraft && Array.isArray(draft.customLinks) ? draft.customLinks : normalizedLinks);
       } catch (e) {
         setCustomLinks([]);
       }
 
-      if (data?.site_title) {
-        applySiteTitle(data.site_title, true);
-        try { localStorage.setItem('nfc_card_site_title', data.site_title); } catch (e) {}
+      if (restoredForm?.site_title) {
+        applySiteTitle(restoredForm.site_title, true);
+        try { localStorage.setItem('nfc_card_site_title', restoredForm.site_title); } catch (e) {}
       }
       if (data?.site_icon_url) {
         applyFavicon(data.site_icon_url);
@@ -351,11 +392,26 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [draftKey, showToast]);
 
   useEffect(() => {
     fetchProfile();
   }, [fetchProfile]);
+
+  useLayoutEffect(() => {
+    if (loading) return;
+    if (!formDirty && !customLinksDirty) {
+      clearAdminDraft(draftKey);
+      return;
+    }
+    writeAdminDraft(draftKey, {
+      version: 1,
+      form,
+      customLinks,
+      formDirty,
+      customLinksDirty,
+    });
+  }, [customLinks, customLinksDirty, draftKey, form, formDirty, loading]);
 
   const handleChange = (field, value) => {
     setPublicationConfirmed(false);
@@ -363,6 +419,7 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
       ? { ...prev, phone: value, phone_link: value }
       : { ...prev, [field]: value });
     setDirty(true);
+    setFormDirty(true);
     if (field === 'site_title') {
       applySiteTitle(value, true);
     }
@@ -375,6 +432,7 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
       { id: Date.now().toString(), type: 'social', label: '', url: '', icon: 'fa-brands fa-tiktok' },
     ]);
     setDirty(true);
+    setCustomLinksDirty(true);
   };
 
   const handleAddPaymentLink = () => {
@@ -384,6 +442,7 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
       { id: Date.now().toString(), type: 'payment', label: 'GCash', icon: 'gcash', qr_image_url: '' },
     ]);
     setDirty(true);
+    setCustomLinksDirty(true);
   };
 
   const handleUpdateCustomLink = (index, field, value) => {
@@ -394,6 +453,7 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
       return next;
     });
     setDirty(true);
+    setCustomLinksDirty(true);
   };
 
   const requestRemoveCustomLink = (index) => {
@@ -412,6 +472,7 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
     setPublicationConfirmed(false);
     setCustomLinks((prev) => prev.filter((_, i) => i !== index));
     setDirty(true);
+    setCustomLinksDirty(true);
     setPendingLinkRemoval(null);
   };
 
@@ -551,7 +612,9 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
         publicationConfirmed,
       });
       setProfile((current) => ({ ...current, ...updateData }));
-      setDirty(false);
+      setFormDirty(false);
+      if (includeCustomLinks) setCustomLinksDirty(false);
+      setDirty(!includeCustomLinks && customLinksDirty);
       setPublicationConfirmed(false);
       showToast('Change request sent. It will not update your live card until approved and published.', 'success');
     } catch (err) {
@@ -1179,7 +1242,7 @@ function ProfileTab({ showToast, section, submitEditRequest, requiresPublication
 /* ============================================================
    Products Tab — Two Sections
    ============================================================ */
-function ProductsTab({ showToast, submitEditRequest, requiresPublicationConfirmation = false }) {
+function ProductsTab({ showToast, submitEditRequest, draftKey, requiresPublicationConfirmation = false }) {
   const [products, setProducts] = useState([]);
   const [productsDirty, setProductsDirty] = useState(false);
   const [publicationConfirmed, setPublicationConfirmed] = useState(false);
@@ -1199,8 +1262,17 @@ function ProductsTab({ showToast, submitEditRequest, requiresPublicationConfirma
       const { data, error } = await supabase.from(productsTable).select('*').eq('site_id', siteId).order('sort_order');
       if (error) throw error;
       const list = data || [];
-      setProducts(list);
-      setProductsDirty(false);
+      const draft = readAdminDraft(draftKey);
+      const hasDraft = draft?.version === 1
+        && Array.isArray(draft.products)
+        && (draft.productsDirty || draft.formOpen);
+      setProducts(hasDraft ? draft.products : list);
+      setProductsDirty(Boolean(hasDraft && draft.productsDirty));
+      setFormOpen(Boolean(hasDraft && draft.formOpen));
+      setEditingProduct(hasDraft ? draft.editingProduct || null : null);
+      setProductForm(hasDraft && draft.productForm && typeof draft.productForm === 'object'
+        ? { name: '', description: '', price: '', is_featured: false, image_url: '', gallery: [], ...draft.productForm }
+        : { name: '', description: '', price: '', is_featured: false, image_url: '', gallery: [] });
       try {
         localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(list));
       } catch (e) {}
@@ -1209,9 +1281,25 @@ function ProductsTab({ showToast, submitEditRequest, requiresPublicationConfirma
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [draftKey, showToast]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  useLayoutEffect(() => {
+    if (loading) return;
+    if (!productsDirty && !formOpen) {
+      clearAdminDraft(draftKey);
+      return;
+    }
+    writeAdminDraft(draftKey, {
+      version: 1,
+      products,
+      productsDirty,
+      formOpen,
+      editingProduct,
+      productForm,
+    });
+  }, [draftKey, editingProduct, formOpen, loading, productForm, products, productsDirty]);
 
   const openAdd = () => {
     setEditingProduct(null);
@@ -1338,6 +1426,7 @@ function ProductsTab({ showToast, submitEditRequest, requiresPublicationConfirma
       });
       setProductsDirty(false);
       setPublicationConfirmed(false);
+      clearAdminDraft(draftKey);
       showToast('Product change request sent. Live products remain unchanged until approved and published.', 'success');
     } catch (err) {
       showToast('Request failed: ' + err.message, 'error');
@@ -1495,7 +1584,17 @@ function Admin() {
   const [legalError, setLegalError] = useState('');
   const [legalCheckAttempt, setLegalCheckAttempt] = useState(0);
   const [legalSaving, setLegalSaving] = useState(false);
-  const [activeSection, setActiveSection] = useState('website');
+  const [activeSection, setActiveSection] = useState(() => {
+    try {
+      const savedSection = localStorage.getItem(ADMIN_SECTION_KEY);
+      return ['website', 'profile', 'social', 'payments', 'products'].includes(savedSection)
+        ? savedSection
+        : 'website';
+    } catch (error) {
+      console.error('Unable to restore client admin section:', error);
+      return 'website';
+    }
+  });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [adminTheme, setAdminTheme] = useState(() => {
     try {
@@ -1506,6 +1605,14 @@ function Admin() {
   });
   const [toast, setToast] = useState(null);
   const [businessName, setBusinessName] = useState('');
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADMIN_SECTION_KEY, activeSection);
+    } catch (error) {
+      console.error('Unable to save client admin section:', error);
+    }
+  }, [activeSection]);
 
   const submitEditRequest = useCallback(async ({ requestType, payload, fields, notes = '', publicationConfirmed = false }) => {
     if (!session?.user) throw new Error('Sign in again before requesting changes.');
@@ -1814,9 +1921,9 @@ function Admin() {
           Changes submitted here are requests only. A super administrator must approve them into a private draft and separately publish that draft before the live card changes.
         </p>
         <div hidden={activeSection === 'products'}>
-          <ProfileTab showToast={showToast} section={activeSection} submitEditRequest={submitEditRequest} requiresPublicationConfirmation={requiresLegalOnboarding} />
+          <ProfileTab showToast={showToast} section={activeSection} submitEditRequest={submitEditRequest} draftKey={getAdminDraftKey(session.user.id, 'profile')} requiresPublicationConfirmation={requiresLegalOnboarding} />
         </div>
-        {activeSection === 'products' && <ProductsTab showToast={showToast} submitEditRequest={submitEditRequest} requiresPublicationConfirmation={requiresLegalOnboarding} />}
+        {activeSection === 'products' && <ProductsTab showToast={showToast} submitEditRequest={submitEditRequest} draftKey={getAdminDraftKey(session.user.id, 'products')} requiresPublicationConfirmation={requiresLegalOnboarding} />}
       </main>
       </div>
 
