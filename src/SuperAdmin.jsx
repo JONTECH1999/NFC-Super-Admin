@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
+import PasswordInput from './PasswordInput';
 import SuperAdminSiteEditor from './SuperAdminSiteEditor';
 import './superadmin.css';
 
@@ -476,7 +477,7 @@ function SuperAdmin() {
           </button>
           {error && <div className="superadmin-alert error" role="alert">{error}</div>}
           <label>Email address<input name="email" type="email" autoComplete="username" required /></label>
-          <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
+          <label>Password<PasswordInput name="password" autoComplete="current-password" required /></label>
           <button className="superadmin-primary" type="submit" disabled={loginBusy}>{loginBusy ? 'Signing in…' : 'Sign in securely'}</button>
         </form>
       </main>
@@ -799,8 +800,8 @@ function SuperAdmin() {
               <label>Business / site name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Acme Business" maxLength={120} required /></label>
               <label>Public website URL<input type="url" value={form.public_url} onChange={(event) => setForm({ ...form, public_url: event.target.value })} placeholder="https://acme.web.app" required /></label>
               <label>Client email<input type="email" value={form.client_email} onChange={(event) => setForm({ ...form, client_email: event.target.value })} placeholder="client@example.com" required /></label>
-              <label>Client password<input type="password" autoComplete="new-password" minLength={12} maxLength={128} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label>
-              <label>Confirm client password<input type="password" autoComplete="new-password" minLength={12} maxLength={128} value={form.confirm_password} onChange={(event) => setForm({ ...form, confirm_password: event.target.value })} required /></label>
+              <label>Client password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label>
+              <label>Confirm client password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} value={form.confirm_password} onChange={(event) => setForm({ ...form, confirm_password: event.target.value })} required /></label>
               <p className="superadmin-form-note">Use a unique email and a password between 12 and 128 characters. The hosting site must be set up and deployed separately.</p>
               <button className="superadmin-primary" type="submit" disabled={busyAction === 'create'}>{busyAction === 'create' ? 'Creating…' : 'Create site and login'}</button>
             </form>
@@ -821,8 +822,8 @@ function SuperAdmin() {
             <p className="superadmin-muted">Choose a password between 12 and 128 characters for this client.</p>
             {error && <div className="superadmin-alert error" role="alert">{error}</div>}
             <label>Client email<input type="email" autoComplete="email" required value={assignEmail} onChange={(event) => setAssignEmail(event.target.value)} /></label>
-            <label>Client password<input type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={assignPassword} onChange={(event) => setAssignPassword(event.target.value)} /></label>
-            <label>Confirm client password<input type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={assignPasswordConfirm} onChange={(event) => setAssignPasswordConfirm(event.target.value)} /></label>
+            <label>Client password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} required value={assignPassword} onChange={(event) => setAssignPassword(event.target.value)} /></label>
+            <label>Confirm client password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} required value={assignPasswordConfirm} onChange={(event) => setAssignPasswordConfirm(event.target.value)} /></label>
             <div className="superadmin-site-actions">
               <button className="superadmin-secondary" type="button" disabled={busyAction !== ''} onClick={() => { setAssignSite(null); setAssignPassword(''); setAssignPasswordConfirm(''); }}>Cancel</button>
               <button className="superadmin-primary" type="submit" disabled={busyAction !== ''}>{busyAction ? 'Creating…' : 'Create login'}</button>
@@ -843,8 +844,8 @@ function SuperAdmin() {
             <h2 id="reset-client-password-title">Set a new password for {resetSite.name}</h2>
             <p className="superadmin-muted">The current password will stop working. Choose 12 to 128 characters.</p>
             {error && <div className="superadmin-alert error" role="alert">{error}</div>}
-            <label>New client password<input type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} /></label>
-            <label>Confirm new password<input type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={resetPasswordConfirm} onChange={(event) => setResetPasswordConfirm(event.target.value)} /></label>
+            <label>New client password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} required value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} /></label>
+            <label>Confirm new password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} required value={resetPasswordConfirm} onChange={(event) => setResetPasswordConfirm(event.target.value)} /></label>
             <div className="superadmin-site-actions">
               <button className="superadmin-secondary" type="button" disabled={busyAction !== ''} onClick={() => { setResetSite(null); setResetPassword(''); setResetPasswordConfirm(''); }}>Cancel</button>
               <button className="superadmin-primary" type="submit" disabled={busyAction !== ''}>{busyAction ? 'Saving…' : 'Save new password'}</button>

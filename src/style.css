@@ -4844,6 +4844,12 @@ body {
     clip-path: inset(50%);
 }
 
+@keyframes card-action-tap-hint {
+    0%, 100% { transform: scale(1); }
+    38% { transform: scale(1.09); }
+    66% { transform: scale(.99); }
+}
+
 .save-contact-button {
     display: flex;
     width: 100%;
@@ -4886,6 +4892,10 @@ body {
 
 .profile-utility-button i {
     color: var(--screen-accent);
+}
+
+.business-card .is-action-hint-active {
+    animation: card-action-tap-hint 620ms cubic-bezier(.2, .75, .3, 1);
 }
 
 .social-section,
@@ -5580,5 +5590,52 @@ body {
         bottom: auto;
         width: min(100%, 440px);
         margin: 0;
+    }
+}
+
+.card-promo {
+    position: fixed;
+    z-index: 20;
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    display: flex;
+    max-width: calc(100vw - 24px);
+    align-items: center;
+    gap: 12px;
+    padding: 9px 12px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: transparent;
+    color: #111;
+    font: 500 11px/1.3 "Inter", sans-serif;
+}
+
+.card-promo a {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    color: #d00000;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.card-promo a:hover {
+    color: #a00000;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.card-promo a:focus-visible {
+    border-radius: 4px;
+    outline: 2px solid #c4b5fd;
+    outline-offset: 3px;
+}
+
+@media (max-width: 520px) {
+    .card-promo {
+        gap: 8px;
+        padding: 8px 10px;
+        font-size: 10px;
     }
 }

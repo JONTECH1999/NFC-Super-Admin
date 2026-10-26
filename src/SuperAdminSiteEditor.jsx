@@ -251,6 +251,115 @@ function ReviewCustomLinks({ value }) {
   );
 }
 
+function parseReviewValue(value) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function getReviewImageUrls(value) {
+  const parsed = parseReviewValue(value);
+  const values = Array.isArray(parsed) ? parsed : [parsed];
+  return values
+    .filter((item) => typeof item === 'string' && item.trim())
+    .map((item) => {
+      try {
+        const url = new URL(item.trim(), window.location.href);
+        return ['http:', 'https:'].includes(url.protocol) ? url.href : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+
+function ReviewImagePreview({ url, alt }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <a className="superadmin-review-image-link" href={url} target="_blank" rel="noreferrer">
+      <img src={url} alt={alt} loading="lazy" onError={() => setFailed(true)} />
+      {failed && <span className="superadmin-review-image-error">Image could not be loaded. Open the image link to check it.</span>}
+    </a>
+  );
+}
+
+function ReviewImageValue({ value, label }) {
+  const urls = getReviewImageUrls(value);
+  if (urls.length === 0) return <pre>{displayReviewValue(value)}</pre>;
+
+  return (
+    <div className="superadmin-review-image-list">
+      {urls.map((url, index) => (
+        <ReviewImagePreview
+          key={`${url}-${index}`}
+          url={url}
+          alt={`${label || 'Requested'} image ${index + 1}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function displayReviewValue(value) {
+  if (value === null || value === undefined) return '—';
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+
+function ReviewProductValue({ value, changeKey }) {
+  const parsed = parseReviewValue(value);
+  if (parsed === null || parsed === undefined || parsed === '') return <pre>—</pre>;
+
+  const field = changeKey.split(':').pop();
+  const product = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  const imageUrls = field === 'image_url' || field === 'gallery'
+    ? getReviewImageUrls(parsed)
+    : [
+        ...getReviewImageUrls(product?.image_url),
+        ...getReviewImageUrls(product?.gallery),
+      ];
+  const images = [...new Set(imageUrls)];
+  const isImageValue = field === 'image_url' || field === 'gallery';
+
+  if (!product && !isImageValue) {
+    return <pre>{typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2)}</pre>;
+  }
+
+  return (
+    <div className="superadmin-review-product">
+      {images.length > 0 ? (
+        <div className="superadmin-review-product-images">
+          {images.map((url, index) => (
+            <ReviewImagePreview
+              key={`${url}-${index}`}
+              url={url}
+              alt={product?.alt || product?.name || 'Product image'}
+            />
+          ))}
+        </div>
+      ) : (
+        <span className="superadmin-review-product-no-image">No product image</span>
+      )}
+      {product && (
+        <div className="superadmin-review-product-details">
+          {product.name && <strong>{product.name}</strong>}
+          {product.price && <span>{product.price}</span>}
+          {product.description && <p>{product.description}</p>}
+        </div>
+      )}
+      {isImageValue && typeof parsed === 'string' && (
+        images[0]
+          ? <a className="superadmin-review-product-image-url" href={images[0]} target="_blank" rel="noreferrer">{parsed}</a>
+          : <span className="superadmin-review-product-image-url">{parsed}</span>
+      )}
+    </div>
+  );
+}
+
 function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
   const [profile, setProfile] = useState({});
   const [products, setProducts] = useState([]);
@@ -603,6 +712,10 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
   const renderReviewValue = (change, value) => change.key === 'profile:custom_links'
     || change.key.startsWith('profile:custom_link:')
     ? <ReviewCustomLinks value={value} />
+    : ['profile:profile_image_url', 'profile:site_icon_url', 'profile:custom_qr_url'].includes(change.key)
+      ? <ReviewImageValue label={change.label} value={value} />
+    : change.key.startsWith('product:')
+      ? <ReviewProductValue changeKey={change.key} value={value} />
     : <pre>{displayValue(value)}</pre>;
 
   const hasEmailFollowUp = emailFollowups.length > 0;

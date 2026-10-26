@@ -19,7 +19,7 @@
     "build:d10": "vite build --mode d10",
     "build:aljon": "vite build --mode aljon",
     "build:remo": "vite build --mode remo",
-    "deploy:d1": "vite build --mode d1 && npx firebase-tools deploy --only hosting:calling-card-d1 --project digital-callingcard",
+    "deploy:d1": "vite build --mode d1 && npx firebase-tools deploy --only hosting:calling-card --project digital-callingcard",
     "deploy:aljon": "vite build --mode aljon && npx firebase-tools deploy --only hosting:aljon-contacts-hosting --project digital-callingcard",
     "deploy:d2": "vite build --mode d2 && npx firebase-tools deploy --only hosting:calling-card-d2 --project digital-callingcard",
     "deploy:d3": "vite build --mode d3 && npx firebase-tools deploy --only hosting:calling-card-d3 --project digital-callingcard",

@@ -2,8 +2,17 @@ import { useState, useEffect, useCallback, useRef, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { profilesTable, productsTable, siteId, supabase, supabaseUrl } from './lib/supabase';
 import { applyFavicon, applySiteTitle } from './lib/siteSettings';
+import PasswordInput from './PasswordInput';
+import {
+  CLIENT_PRIVACY_VERSION,
+  CLIENT_TERMS_VERSION,
+  ClientLegalAcceptance,
+  LegalDocumentLinks,
+  PublicationConfirmation,
+} from './ClientLegal';
 import './admin.css';
 
+const requiresLegalOnboarding = /^calling-card-d(?:[1-9]|10)$/.test(siteId);
 const CACHE_SCOPE = (() => {
   try {
     if (supabaseUrl) {
@@ -108,7 +117,7 @@ function HelpLabel({ htmlFor, children, help }) {
 /* ============================================================
    Login Form
    ============================================================ */
-function LoginForm({ onLogin }) {
+function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -129,10 +138,17 @@ function LoginForm({ onLogin }) {
   };
 
   return (
-    <div className="admin-login">
-      <form className="admin-login-card" onSubmit={handleSubmit}>
-        <h1 className="admin-login-title">Client Login</h1>
-        <p className="admin-login-subtitle">Sign in with the account provided by your site administrator.</p>
+    <div className="admin-login admin-client-sign-in">
+      <form className={`admin-login-card${loading ? ' is-signing-in' : ''}`} onSubmit={handleSubmit}>
+        <div className="admin-login-brand" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M12 3 19 6v5c0 4.5-2.8 7.8-7 10-4.2-2.2-7-5.5-7-10V6l7-3Z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+        </div>
+        <p className="admin-login-eyebrow">YOUR CARD WORKSPACE</p>
+        <h1 className="admin-login-title">Welcome back</h1>
+        <p className="admin-login-subtitle">Sign in securely to manage your digital card.</p>
 
         {error && <div className="admin-login-error">{error}</div>}
 
@@ -152,10 +168,9 @@ function LoginForm({ onLogin }) {
 
         <div className="admin-form-group">
           <label className="admin-label" htmlFor="login-password">Password</label>
-          <input
+          <PasswordInput
             id="login-password"
             className="admin-input"
-            type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
@@ -166,12 +181,16 @@ function LoginForm({ onLogin }) {
 
         <button
           type="submit"
-          className="admin-btn admin-btn-primary"
+          className={`admin-btn admin-btn-primary admin-login-submit${loading ? ' is-loading' : ''}`}
           style={{ width: '100%', marginTop: 8 }}
           disabled={loading}
+          aria-live="polite"
         >
-          {loading ? 'Signing in…' : 'Sign In'}
+          {loading && <span className="admin-login-button-spinner" aria-hidden="true" />}
+          {loading ? 'Securely signing you in…' : 'Sign in to your workspace'}
         </button>
+        <p className="admin-login-security"><span aria-hidden="true">✓</span> Your account is protected with secure sign-in</p>
+        <LegalDocumentLinks />
       </form>
     </div>
   );
@@ -219,10 +238,9 @@ function RequiredPasswordChange({ session, onComplete }) {
         {error && <div className="admin-login-error" role="alert">{error}</div>}
         <div className="admin-form-group">
           <label className="admin-label" htmlFor="new-client-password">New password</label>
-          <input
+          <PasswordInput
             id="new-client-password"
             className="admin-input"
-            type="password"
             autoComplete="new-password"
             minLength={12}
             required
@@ -232,10 +250,9 @@ function RequiredPasswordChange({ session, onComplete }) {
         </div>
         <div className="admin-form-group">
           <label className="admin-label" htmlFor="confirm-client-password">Confirm new password</label>
-          <input
+          <PasswordInput
             id="confirm-client-password"
             className="admin-input"
-            type="password"
             autoComplete="new-password"
             minLength={12}
             required
@@ -257,7 +274,7 @@ function RequiredPasswordChange({ session, onComplete }) {
 /* ============================================================
    Profile Tab
    ============================================================ */
-function ProfileTab({ showToast, section, submitEditRequest }) {
+function ProfileTab({ showToast, section, submitEditRequest, requiresPublicationConfirmation = false }) {
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({});
   const [loading, setLoading] = useState(true);
@@ -265,6 +282,7 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
   const [uploading, setUploading] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [publicationConfirmed, setPublicationConfirmed] = useState(false);
   const [customLinks, setCustomLinks] = useState([]);
   const [pendingLinkRemoval, setPendingLinkRemoval] = useState(null);
   const [uploadingPaymentIndex, setUploadingPaymentIndex] = useState(null);
@@ -340,6 +358,7 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
   }, [fetchProfile]);
 
   const handleChange = (field, value) => {
+    setPublicationConfirmed(false);
     setForm((prev) => field === 'phone'
       ? { ...prev, phone: value, phone_link: value }
       : { ...prev, [field]: value });
@@ -350,6 +369,7 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
   };
 
   const handleAddCustomLink = () => {
+    setPublicationConfirmed(false);
     setCustomLinks((prev) => [
       ...prev,
       { id: Date.now().toString(), type: 'social', label: '', url: '', icon: 'fa-brands fa-tiktok' },
@@ -358,6 +378,7 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
   };
 
   const handleAddPaymentLink = () => {
+    setPublicationConfirmed(false);
     setCustomLinks((prev) => [
       ...prev,
       { id: Date.now().toString(), type: 'payment', label: 'GCash', icon: 'gcash', qr_image_url: '' },
@@ -366,6 +387,7 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
   };
 
   const handleUpdateCustomLink = (index, field, value) => {
+    setPublicationConfirmed(false);
     setCustomLinks((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
@@ -387,6 +409,7 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
   const handleRemoveCustomLink = () => {
     if (!pendingLinkRemoval) return;
     const { index } = pendingLinkRemoval;
+    setPublicationConfirmed(false);
     setCustomLinks((prev) => prev.filter((_, i) => i !== index));
     setDirty(true);
     setPendingLinkRemoval(null);
@@ -500,6 +523,10 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
         return;
       }
     }
+    if (requiresPublicationConfirmation && !publicationConfirmed) {
+      showToast('Confirm that you are authorized to submit this information before requesting approval.', 'error');
+      return;
+    }
     setSaving(true);
     try {
       const updateData = Object.fromEntries(
@@ -521,9 +548,11 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
         requestType: 'profile',
         payload: updateData,
         fields: updateData,
+        publicationConfirmed,
       });
       setProfile((current) => ({ ...current, ...updateData }));
       setDirty(false);
+      setPublicationConfirmed(false);
       showToast('Change request sent. It will not update your live card until approved and published.', 'success');
     } catch (err) {
       showToast('Request failed: ' + err.message, 'error');
@@ -745,10 +774,13 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
 
           <div className="admin-save-bar" style={{ marginTop: 18 }}>
             {dirty && <span className="admin-unsaved">● Unsaved changes</span>}
+            {requiresPublicationConfirmation && (
+              <PublicationConfirmation checked={publicationConfirmed} onChange={setPublicationConfirmed} />
+            )}
             <button
               className="admin-btn admin-btn-primary"
               onClick={handleSave}
-              disabled={saving || !dirty}
+              disabled={saving || !dirty || (requiresPublicationConfirmation && !publicationConfirmed)}
             >
               {saving ? 'Submitting…' : 'Request approval'}
             </button>
@@ -813,10 +845,13 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
 
         <div className="admin-save-bar">
           {dirty && <span className="admin-unsaved">● Unsaved changes</span>}
+          {requiresPublicationConfirmation && (
+            <PublicationConfirmation checked={publicationConfirmed} onChange={setPublicationConfirmed} />
+          )}
           <button
             className="admin-btn admin-btn-primary"
             onClick={handleSave}
-            disabled={saving || !dirty}
+            disabled={saving || !dirty || (requiresPublicationConfirmation && !publicationConfirmed)}
           >
             {saving ? 'Submitting…' : 'Request approval'}
           </button>
@@ -961,10 +996,13 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
 
         <div className="admin-save-bar">
           {dirty && <span className="admin-unsaved">● Unsaved changes</span>}
+          {requiresPublicationConfirmation && (
+            <PublicationConfirmation checked={publicationConfirmed} onChange={setPublicationConfirmed} />
+          )}
           <button
             className="admin-btn admin-btn-primary"
             onClick={() => handleSave(true)}
-            disabled={saving || !dirty}
+            disabled={saving || !dirty || (requiresPublicationConfirmation && !publicationConfirmed)}
           >
             {saving ? 'Submitting…' : 'Request approval'}
           </button>
@@ -1082,10 +1120,13 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
 
         <div className="admin-save-bar" style={{ marginTop: 20 }}>
           {dirty && <span className="admin-unsaved">● Unsaved changes</span>}
+          {requiresPublicationConfirmation && (
+            <PublicationConfirmation checked={publicationConfirmed} onChange={setPublicationConfirmed} />
+          )}
           <button
             className="admin-btn admin-btn-primary"
             onClick={() => handleSave(true)}
-            disabled={saving || !dirty}
+            disabled={saving || !dirty || (requiresPublicationConfirmation && !publicationConfirmed)}
           >
             {saving ? 'Submitting…' : 'Request approval'}
           </button>
@@ -1138,9 +1179,10 @@ function ProfileTab({ showToast, section, submitEditRequest }) {
 /* ============================================================
    Products Tab — Two Sections
    ============================================================ */
-function ProductsTab({ showToast, submitEditRequest }) {
+function ProductsTab({ showToast, submitEditRequest, requiresPublicationConfirmation = false }) {
   const [products, setProducts] = useState([]);
   const [productsDirty, setProductsDirty] = useState(false);
+  const [publicationConfirmed, setPublicationConfirmed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -1193,6 +1235,7 @@ function ProductsTab({ showToast, submitEditRequest }) {
   const closeForm = () => { setFormOpen(false); setEditingProduct(null); };
 
   const handleFormChange = (field, value) => {
+    setPublicationConfirmed(false);
     setProductForm((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -1239,6 +1282,7 @@ function ProductsTab({ showToast, submitEditRequest }) {
   };
 
   const removeGalleryImage = (index) => {
+    setPublicationConfirmed(false);
     setProductForm((prev) => ({ ...prev, gallery: prev.gallery.filter((_, i) => i !== index) }));
   };
 
@@ -1258,6 +1302,7 @@ function ProductsTab({ showToast, submitEditRequest }) {
       : [...products, { ...nextProduct, id: crypto.randomUUID(), sort_order: products.length }];
     setProducts(nextProducts);
     setProductsDirty(true);
+    setPublicationConfirmed(false);
     showToast('Product changes staged. Submit them for administrator approval when ready.', 'success');
     closeForm();
   };
@@ -1266,6 +1311,7 @@ function ProductsTab({ showToast, submitEditRequest }) {
     if (!window.confirm('Delete "' + product.name + '"? This cannot be undone.')) return;
     setProducts(products.filter((item) => item.id !== product.id));
     setProductsDirty(true);
+    setPublicationConfirmed(false);
     showToast('Product removal staged. Submit the changes for administrator approval.', 'success');
   };
 
@@ -1274,17 +1320,24 @@ function ProductsTab({ showToast, submitEditRequest }) {
       ? { ...item, is_featured: !item.is_featured }
       : item));
     setProductsDirty(true);
+    setPublicationConfirmed(false);
   };
 
   const handleRequestApproval = async () => {
+    if (requiresPublicationConfirmation && !publicationConfirmed) {
+      showToast('Confirm that you are authorized to submit this information before requesting approval.', 'error');
+      return;
+    }
     setSaving(true);
     try {
       await submitEditRequest({
         requestType: 'products',
         payload: products,
         fields: { products: products.length },
+        publicationConfirmed,
       });
       setProductsDirty(false);
+      setPublicationConfirmed(false);
       showToast('Product change request sent. Live products remain unchanged until approved and published.', 'success');
     } catch (err) {
       showToast('Request failed: ' + err.message, 'error');
@@ -1301,7 +1354,10 @@ function ProductsTab({ showToast, submitEditRequest }) {
     <>
       <div className="admin-save-bar">
         {productsDirty && <span className="admin-unsaved">● Product changes not submitted</span>}
-        <button className="admin-btn admin-btn-primary" type="button" onClick={handleRequestApproval} disabled={saving || !productsDirty}>
+        {requiresPublicationConfirmation && (
+          <PublicationConfirmation checked={publicationConfirmed} onChange={setPublicationConfirmed} />
+        )}
+        <button className="admin-btn admin-btn-primary" type="button" onClick={handleRequestApproval} disabled={saving || !productsDirty || (requiresPublicationConfirmation && !publicationConfirmed)}>
           {saving ? 'Submitting…' : 'Request approval for product changes'}
         </button>
       </div>
@@ -1435,6 +1491,10 @@ function Admin() {
   const [session, setSession] = useState(undefined);
   const [siteAccess, setSiteAccess] = useState(null);
   const [accessError, setAccessError] = useState(false);
+  const [legalStatus, setLegalStatus] = useState(requiresLegalOnboarding ? 'loading' : 'not-required');
+  const [legalError, setLegalError] = useState('');
+  const [legalCheckAttempt, setLegalCheckAttempt] = useState(0);
+  const [legalSaving, setLegalSaving] = useState(false);
   const [activeSection, setActiveSection] = useState('website');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [adminTheme, setAdminTheme] = useState(() => {
@@ -1447,8 +1507,23 @@ function Admin() {
   const [toast, setToast] = useState(null);
   const [businessName, setBusinessName] = useState('');
 
-  const submitEditRequest = useCallback(async ({ requestType, payload, fields, notes = '' }) => {
+  const submitEditRequest = useCallback(async ({ requestType, payload, fields, notes = '', publicationConfirmed = false }) => {
     if (!session?.user) throw new Error('Sign in again before requesting changes.');
+    if (requiresLegalOnboarding) {
+      if (legalStatus !== 'accepted') throw new Error('Review and accept the current client terms before submitting changes.');
+      if (!publicationConfirmed) throw new Error('Confirm you are authorized to submit information for public display.');
+      const { error } = await supabase.rpc('submit_client_edit_request_with_confirmation', {
+        target_site_id: siteId,
+        target_request_type: requestType,
+        target_client_email: session.user.email || '',
+        target_payload: payload,
+        target_fields: fields,
+        target_notes: notes,
+        target_publication_confirmed: publicationConfirmed,
+      });
+      if (error) throw error;
+      return;
+    }
     const { error } = await supabase.from('site_edit_requests').insert({
       site_id: siteId,
       user_id: session.user.id,
@@ -1459,7 +1534,7 @@ function Admin() {
       notes,
     });
     if (error) throw error;
-  }, [session]);
+  }, [legalStatus, session]);
 
   useEffect(() => {
     try {
@@ -1521,7 +1596,61 @@ function Admin() {
   }, [session]);
 
   useEffect(() => {
-    if (session) {
+    if (!requiresLegalOnboarding || !session || siteAccess !== true) {
+      if (!requiresLegalOnboarding) setLegalStatus('not-required');
+      return undefined;
+    }
+
+    let active = true;
+    setLegalStatus('loading');
+    setLegalError('');
+    supabase.from('client_legal_acceptances')
+      .select('id')
+      .eq('site_id', siteId)
+      .eq('user_id', session.user.id)
+      .eq('acceptance_type', 'onboarding')
+      .eq('terms_version', CLIENT_TERMS_VERSION)
+      .eq('privacy_notice_version', CLIENT_PRIVACY_VERSION)
+      .limit(1)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (active) setLegalStatus(data ? 'accepted' : 'required');
+      })
+      .catch((error) => {
+        console.error('Unable to verify client legal acknowledgement:', error);
+        if (active) {
+          setLegalError(error.message || 'The acknowledgement could not be verified.');
+          setLegalStatus('error');
+        }
+      });
+
+    return () => { active = false; };
+  }, [session?.user?.id, siteAccess, legalCheckAttempt]);
+
+  const acceptLegalDocuments = async () => {
+    if (!session?.user) return;
+    setLegalSaving(true);
+    setLegalError('');
+    try {
+      const { error } = await supabase.rpc('record_client_legal_acknowledgement', {
+        target_site_id: siteId,
+        target_terms_version: CLIENT_TERMS_VERSION,
+        target_privacy_notice_version: CLIENT_PRIVACY_VERSION,
+      });
+      if (error) throw error;
+      setLegalStatus('accepted');
+    } catch (error) {
+      console.error('Unable to save client legal acknowledgement:', error);
+      setLegalError(error.message || 'Unable to save your acknowledgement. Please try again.');
+      setLegalStatus('required');
+    } finally {
+      setLegalSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (session && (!requiresLegalOnboarding || legalStatus === 'accepted')) {
       supabase.from(profilesTable).select('business, site_title, site_icon_url').eq('site_id', siteId).single().then(({ data }) => {
         if (data?.business) setBusinessName(data.business);
         if (data?.site_title) {
@@ -1534,7 +1663,7 @@ function Admin() {
         }
       });
     }
-  }, [session]);
+  }, [session, legalStatus]);
 
   if (session === undefined) return <div className="admin-login"><div className="admin-spinner" /></div>;
   if (!session) return <><LoginForm />{toast && <Toast key={toast.key} message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}</>;
@@ -1557,6 +1686,39 @@ function Admin() {
           </button>
         </div>
       </div>
+    );
+  }
+  if (requiresLegalOnboarding && legalStatus === 'loading') {
+    return <div className="admin-login"><div className="admin-spinner" /></div>;
+  }
+  if (requiresLegalOnboarding && legalStatus === 'error') {
+    return (
+      <div className="admin-login">
+        <div className="admin-login-card">
+          <h1 className="admin-login-title">Acknowledgement check unavailable</h1>
+          <p className="admin-login-subtitle">
+            The site cannot open the client editor until the privacy and terms acknowledgement table is installed and available.
+          </p>
+          {legalError && <div className="admin-login-error" role="alert">{legalError}</div>}
+          <p className="admin-login-subtitle">Ask the site administrator to run <code>supabase/client-legal-acceptance.sql</code>, then retry.</p>
+          <button className="admin-btn admin-btn-primary" type="button" onClick={() => setLegalCheckAttempt((attempt) => attempt + 1)}>
+            Retry acknowledgement check
+          </button>
+          <button className="admin-btn admin-btn-outline" type="button" onClick={() => supabase.auth.signOut()}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (requiresLegalOnboarding && legalStatus === 'required') {
+    return (
+      <ClientLegalAcceptance
+        onAccept={acceptLegalDocuments}
+        onSignOut={() => supabase.auth.signOut()}
+        saving={legalSaving}
+        error={legalError}
+      />
     );
   }
 
@@ -1585,6 +1747,7 @@ function Admin() {
           <span className="admin-header-title">Card manager{businessName && <span className="admin-header-business"> · {businessName}</span>}</span>
         </div>
         <div className="admin-header-right">
+          {requiresLegalOnboarding && <LegalDocumentLinks className="admin-header-legal-links" />}
           <button
             className="admin-btn admin-btn-sm admin-btn-outline admin-theme-toggle"
             type="button"
@@ -1651,9 +1814,9 @@ function Admin() {
           Changes submitted here are requests only. A super administrator must approve them into a private draft and separately publish that draft before the live card changes.
         </p>
         <div hidden={activeSection === 'products'}>
-          <ProfileTab showToast={showToast} section={activeSection} submitEditRequest={submitEditRequest} />
+          <ProfileTab showToast={showToast} section={activeSection} submitEditRequest={submitEditRequest} requiresPublicationConfirmation={requiresLegalOnboarding} />
         </div>
-        {activeSection === 'products' && <ProductsTab showToast={showToast} submitEditRequest={submitEditRequest} />}
+        {activeSection === 'products' && <ProductsTab showToast={showToast} submitEditRequest={submitEditRequest} requiresPublicationConfirmation={requiresLegalOnboarding} />}
       </main>
       </div>
 

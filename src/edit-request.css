@@ -8,6 +8,17 @@
   font-family: Inter, Arial, sans-serif;
 }
 
+.edit-request-auth-screen {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  align-items: center;
+  background:
+    radial-gradient(ellipse at 16% 20%, rgba(177, 135, 63, 0.1), transparent 38%),
+    radial-gradient(ellipse at 86% 80%, rgba(71, 112, 163, 0.08), transparent 36%),
+    #f4f0e8;
+}
+
 .edit-request-loading {
   display: grid;
   place-items: center;
@@ -42,11 +53,102 @@
 }
 
 .edit-request-login {
+  position: relative;
+  border-color: rgba(213, 208, 196, 0.9);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(48, 43, 32, 0.12);
   display: flex;
   width: min(440px, 100%);
   flex-direction: column;
   gap: 14px;
   margin: 9vh auto 0;
+  animation: edit-request-login-enter 650ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.edit-request-auth-screen .edit-request-login {
+  margin: 0 auto;
+}
+
+.edit-request-login-mark {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto;
+  border-radius: 16px;
+  color: #fff;
+  background: linear-gradient(145deg, #9a722e, #c39a55);
+  box-shadow: 0 10px 26px rgba(142, 103, 35, 0.22);
+  animation: edit-request-mark-float 4s ease-in-out infinite;
+}
+
+.edit-request-login-mark svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.edit-request-login .edit-request-eyebrow {
+  margin: 0;
+  text-align: center;
+}
+
+.edit-request-login h1 {
+  margin: 0;
+  color: #252a32;
+  text-align: center;
+}
+
+.edit-request-login > .edit-request-muted {
+  margin-bottom: 4px;
+  text-align: center;
+}
+
+.edit-request-login-submit {
+  position: relative;
+  overflow: hidden;
+  min-height: 46px;
+  gap: 9px;
+  border-color: #876020;
+  border-radius: 8px;
+  background: linear-gradient(110deg, #876020, #a9813b 52%, #76551e);
+  box-shadow: 0 8px 20px rgba(135, 96, 32, 0.18);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.edit-request-login-submit:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 25px rgba(135, 96, 32, 0.28);
+}
+
+.edit-request-login-submit.is-loading {
+  box-shadow: 0 0 0 4px rgba(149, 105, 33, 0.13), 0 10px 26px rgba(135, 96, 32, 0.24);
+}
+
+.edit-request-login-security {
+  margin: 0;
+  color: #7c807f;
+}
+
+.edit-request-page {
+  animation: edit-request-workspace-enter 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes edit-request-login-enter {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes edit-request-mark-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes edit-request-workspace-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .edit-request-header {
@@ -371,6 +473,17 @@
   border-left: 3px solid #bd3d36;
   color: #7f2925;
   background: #fff1ef;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edit-request-auth-screen *,
+  .edit-request-auth-screen *::before,
+  .edit-request-auth-screen *::after,
+  .edit-request-page {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media (max-width: 620px) {

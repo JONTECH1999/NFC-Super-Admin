@@ -63,6 +63,19 @@ display.
   is published (all-rejected requests are emailed immediately because there
   is no accepted draft to publish). Client requests never write directly to
   live profile or product rows.
+- **D1-D10 client onboarding:** the first authorized client sign-in requires
+  acknowledgement of the versioned privacy notice and client terms before the
+  editor loads. The `/edit-request.html` client form enforces the same gate for
+  D1-D10 assignments. Each profile or product change request also requires a
+  separate authorization/public-display confirmation linked to that exact
+  request; the super-admin review function rejects D1-D10 requests without it.
+  Acknowledgements are stored in `client_legal_acceptances` with site, user,
+  document versions, and server timestamp; row-level security limits client
+  access to their assigned site.
+  Apply `supabase/client-legal-acceptance.sql` before deploying these client
+  builds. The in-app documents are pilot drafts and must be checked against
+  actual business practices and reviewed by a Philippine privacy professional
+  before collecting real client information.
 
 ## Technology and project structure
 
@@ -299,7 +312,10 @@ One-time setup:
 
    The function uses Supabase's server-side service-role environment secret.
    Never prefix that secret with `VITE_`, add it to `.env`, or send it to the
-   browser. The function verifies the caller against `super_admins`.
+   browser. The function has gateway JWT verification disabled because it validates the
+   bearer token itself with Supabase Auth, then checks the caller against
+   `super_admins` before privileged operations. Keep both server-side checks
+   in place.
    Rejected-change emails are sent to the site's saved public profile email
    (the **Email** field in the client admin profile). They use SMTP configured
    as Edge Function secrets:

@@ -649,12 +649,30 @@ Deno.serve(async (request) => {
       }
       const { data: editRequest, error: requestError } = await serviceClient
         .from("site_edit_requests")
-        .select("id, site_id, client_email, request_type, fields, payload, notes, status, created_at")
+        .select("id, site_id, user_id, client_email, request_type, fields, payload, notes, status, created_at")
         .eq("id", requestId)
         .maybeSingle();
       if (requestError) throw requestError;
       if (!editRequest) return jsonResponse({ error: "Edit request not found." }, 404, origin);
       if (editRequest.status !== "pending") return invalid("This edit request is no longer pending.", origin);
+      if (/^calling-card-d(?:[1-9]|10)$/.test(editRequest.site_id)) {
+        const { data: publicationConfirmation, error: confirmationError } = await serviceClient
+          .from("client_legal_acceptances")
+          .select("id")
+          .eq("edit_request_id", requestId)
+          .eq("site_id", editRequest.site_id)
+          .eq("user_id", editRequest.user_id)
+          .eq("acceptance_type", "publication_confirmation")
+          .eq("terms_version", "2026-10-26-v1")
+          .eq("privacy_notice_version", "2026-10-26-v1")
+          .eq("publication_confirmation", true)
+          .limit(1)
+          .maybeSingle();
+        if (confirmationError) throw confirmationError;
+        if (!publicationConfirmation) {
+          return invalid("The client must confirm authorization and public display before this request can be reviewed.", origin);
+        }
+      }
       const productRequestError = validateProductRequestIds(editRequest);
       if (productRequestError) return invalid(productRequestError, origin);
       const { profileTable, productsTable } = await getSiteDataTables(serviceClient, editRequest.site_id);

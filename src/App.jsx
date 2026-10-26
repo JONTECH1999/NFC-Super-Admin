@@ -1027,6 +1027,8 @@ function App() {
 
   const toastTimer = useRef(null);
   const rippleTimer = useRef(null);
+  const actionHintTimer = useRef(null);
+  const actionHintsStopped = useRef(false);
   const pageRef = useRef(null);
   const qrButton = useRef(null);
   const closeButton = useRef(null);
@@ -1259,6 +1261,72 @@ function App() {
       window.clearTimeout(rippleTimer.current);
     };
   }, [dataReady, profile.profile_image_url, profileImageReady]);
+
+  useEffect(() => {
+    const stopActionHints = () => {
+      actionHintsStopped.current = true;
+      window.clearTimeout(actionHintTimer.current);
+      pageRef.current?.querySelectorAll(".is-action-hint-active").forEach((element) => {
+        element.classList.remove("is-action-hint-active");
+      });
+    };
+    const interactionEvents = ["pointerdown", "touchstart", "keydown", "wheel", "click"];
+
+    interactionEvents.forEach((eventName) => {
+      window.addEventListener(eventName, stopActionHints, { capture: true, passive: true });
+    });
+
+    return () => {
+      interactionEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, stopActionHints, { capture: true });
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (introPhase !== "done" || actionHintsStopped.current) return undefined;
+
+    const card = pageRef.current?.querySelector(".business-card");
+    if (!card || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return undefined;
+
+    const prioritySelectors = [
+      ".profile-quick-actions .action",
+      ".save-contact-button",
+      ".profile-utility-button",
+      ".social-section .social-grid .action",
+      ".payment-section .social-grid .action",
+      ".contact-strip a[href]",
+    ];
+    const priorityTargets = prioritySelectors.flatMap((selector) => Array.from(card.querySelectorAll(selector)));
+    const allTargets = Array.from(card.querySelectorAll('a[href], button:not([disabled]), [role="button"]'));
+    const targets = [...new Set([...priorityTargets, ...allTargets])].filter((element) => {
+      const style = window.getComputedStyle(element);
+      return (
+        element.getClientRects().length > 0
+        && style.visibility !== "hidden"
+        && !element.closest('[aria-hidden="true"], [hidden], [inert]')
+      );
+    });
+
+    if (targets.length === 0) return undefined;
+
+    let activeTarget = null;
+    let index = 0;
+    const pulseNextTarget = () => {
+      if (actionHintsStopped.current) return;
+      activeTarget?.classList.remove("is-action-hint-active");
+      activeTarget = targets[index];
+      activeTarget.classList.add("is-action-hint-active");
+      index = (index + 1) % targets.length;
+      actionHintTimer.current = window.setTimeout(pulseNextTarget, 950);
+    };
+
+    pulseNextTarget();
+    return () => {
+      window.clearTimeout(actionHintTimer.current);
+      activeTarget?.classList.remove("is-action-hint-active");
+    };
+  }, [introPhase]);
 
   useEffect(() => {
     if (qrOpen) closeButton.current?.focus();
@@ -1570,6 +1638,17 @@ function App() {
         className="page"
         aria-hidden={introPhase !== "done"}
       >
+        <aside className="card-promo" aria-label="Create a business card">
+          <span>Want a Smart NFC Business Card like this?</span>
+          <a
+            href="https://calling-card.web.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Click here
+            <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
+          </a>
+        </aside>
         <article
           className={`business-card${introPhase === "loading" ? " is-loading" : " is-entering"}${tapRipple ? " is-tapped" : ""}`}
           aria-labelledby="person-name"
