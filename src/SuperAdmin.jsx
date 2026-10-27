@@ -55,6 +55,10 @@ function SuperAdmin() {
   const [resetSite, setResetSite] = useState(null);
   const [resetPassword, setResetPassword] = useState('');
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
+  const [emailSite, setEmailSite] = useState(null);
+  const [clientEmail, setClientEmail] = useState('');
+  const [replacementPassword, setReplacementPassword] = useState('');
+  const [replacementPasswordConfirm, setReplacementPasswordConfirm] = useState('');
   const [form, setForm] = useState({ site_id: '', name: '', public_url: '', client_email: '', password: '', confirm_password: '' });
 
   useEffect(() => {
@@ -356,6 +360,38 @@ function SuperAdmin() {
       await loadDashboardData();
     } catch (resetError) {
       setError(resetError.message);
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleChangeClientEmail = async (event) => {
+    event.preventDefault();
+    if (!emailSite) return;
+    if (replacementPassword !== replacementPasswordConfirm) {
+      setError('The client password entries do not match.');
+      return;
+    }
+    setBusyAction(`email:${emailSite.site_id}`);
+    setError('');
+    setNotice('');
+    setCredential(null);
+    try {
+      await invoke({
+        action: 'replace_client_login',
+        site_id: emailSite.site_id,
+        client_email: clientEmail,
+        password: replacementPassword,
+      });
+      setCredential({ email: clientEmail.trim().toLowerCase(), password: replacementPassword });
+      setNotice('A separate client login was created and assigned to this site. The previous account and its access to other sites remain unchanged.');
+      setEmailSite(null);
+      setClientEmail('');
+      setReplacementPassword('');
+      setReplacementPasswordConfirm('');
+      await Promise.all([loadSites(), loadDashboardData()]);
+    } catch (emailError) {
+      setError(emailError.message);
     } finally {
       setBusyAction('');
     }
@@ -773,6 +809,7 @@ function SuperAdmin() {
                       <button type="button" className="superadmin-manage-link" disabled={busyAction !== ''} onClick={() => setEditingSiteId(site.site_id)}>Edit site</button>
                       {site.client_user_id && site.client_enabled ? <>
                         <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => { setResetSite(site); setResetPassword(''); setResetPasswordConfirm(''); setError(''); }}>Change password</button>
+                        <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => { setEmailSite(site); setClientEmail(''); setReplacementPassword(''); setReplacementPasswordConfirm(''); setError(''); }}>Replace login</button>
                         <button type="button" className="superadmin-danger" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'revoke_client', `Revoke ${site.client_email}'s access to ${site.name}?`)}>Revoke access</button>
                       </> : site.client_user_id ? (
                         <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'restore_client', `Restore ${site.client_email}'s access to ${site.name}?`)}>Restore access</button>
@@ -849,6 +886,30 @@ function SuperAdmin() {
             <div className="superadmin-site-actions">
               <button className="superadmin-secondary" type="button" disabled={busyAction !== ''} onClick={() => { setResetSite(null); setResetPassword(''); setResetPasswordConfirm(''); }}>Cancel</button>
               <button className="superadmin-primary" type="submit" disabled={busyAction !== ''}>{busyAction ? 'Saving…' : 'Save new password'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {emailSite && (
+        <div className="superadmin-modal-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !busyAction) {
+            setEmailSite(null);
+            setClientEmail('');
+            setReplacementPassword('');
+            setReplacementPasswordConfirm('');
+          }
+        }}>
+          <form className="superadmin-login superadmin-assign-modal" onSubmit={handleChangeClientEmail} aria-labelledby="change-client-email-title">
+            <p className="superadmin-eyebrow">CLIENT ACCESS</p>
+            <h2 id="change-client-email-title">Create a separate login for {emailSite.name}</h2>
+            <p className="superadmin-muted">This creates a new account for this site only. The previous Gmail and its access to other sites will remain unchanged. The new account gets the password you set below.</p>
+            {error && <div className="superadmin-alert error" role="alert">{error}</div>}
+            <label>New client Gmail or email<input type="email" autoComplete="email" required value={clientEmail} onChange={(event) => setClientEmail(event.target.value)} /></label>
+            <label>New client password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} required value={replacementPassword} onChange={(event) => setReplacementPassword(event.target.value)} /></label>
+            <label>Confirm new client password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} required value={replacementPasswordConfirm} onChange={(event) => setReplacementPasswordConfirm(event.target.value)} /></label>
+            <div className="superadmin-site-actions">
+              <button className="superadmin-secondary" type="button" disabled={busyAction !== ''} onClick={() => { setEmailSite(null); setClientEmail(''); setReplacementPassword(''); setReplacementPasswordConfirm(''); }}>Cancel</button>
+              <button className="superadmin-primary" type="submit" disabled={busyAction !== ''}>{busyAction === `email:${emailSite.site_id}` ? 'Creating…' : 'Create replacement login'}</button>
             </div>
           </form>
         </div>

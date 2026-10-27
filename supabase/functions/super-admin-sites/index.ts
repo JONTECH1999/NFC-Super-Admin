@@ -1294,6 +1294,105 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: true }, 200, origin);
     }
 
+    if (body.action === "replace_client_login") {
+      const siteId = String(body.site_id || "").trim();
+      const email = String(body.client_email || "").trim().toLowerCase();
+      const password = body.password;
+      if (!siteId) return invalid("A site ID is required.", origin);
+      if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return invalid("Enter a valid client email address.", origin);
+      }
+      if (!isValidClientPassword(password)) return invalid("Choose a client password between 12 and 128 characters.", origin);
+
+      const { data: site, error: siteError } = await serviceClient
+        .from("managed_sites")
+        .select("client_user_id, client_email, name")
+        .eq("site_id", siteId)
+        .maybeSingle();
+      if (siteError) throw siteError;
+      if (!site?.client_user_id) return invalid("No client login is assigned to this site.", origin);
+      if (site.client_email.trim().toLowerCase() === email) {
+        return invalid("Enter a different email address from the current client login.", origin);
+      }
+
+      const { data: createdUser, error: createUserError } = await serviceClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        app_metadata: { force_password_change: false },
+      });
+      if (createUserError) {
+        return jsonResponse({ error: `Could not create the replacement client login: ${createUserError.message}` }, 400, origin);
+      }
+      const newUserId = createdUser.user.id;
+
+      const { error: assignmentError } = await serviceClient.from("site_admins").insert({
+        site_id: siteId,
+        user_id: newUserId,
+      });
+      if (assignmentError) {
+        const cleanupSucceeded = await deleteCreatedUser((id) => serviceClient.auth.admin.deleteUser(id), newUserId);
+        if (!cleanupSucceeded) {
+          console.error("Could not remove replacement account after assignment failed:", assignmentError.message);
+          return jsonResponse({ error: "Login assignment failed and the new account could not be removed. Contact the system administrator." }, 500, origin);
+        }
+        throw assignmentError;
+      }
+
+      const { data: updatedSite, error: siteUpdateError } = await serviceClient
+        .from("managed_sites")
+        .update({
+          client_email: email,
+          client_user_id: newUserId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("site_id", siteId)
+        .eq("client_user_id", site.client_user_id)
+        .select("site_id")
+        .maybeSingle();
+      if (siteUpdateError || !updatedSite) {
+        const { error: assignmentCleanupError } = await serviceClient.from("site_admins")
+          .delete()
+          .eq("site_id", siteId)
+          .eq("user_id", newUserId);
+        const cleanupSucceeded = await deleteCreatedUser((id) => serviceClient.auth.admin.deleteUser(id), newUserId);
+        if (assignmentCleanupError || !cleanupSucceeded) {
+          console.error("Replacement login rollback failed:", assignmentCleanupError?.message || "Client user cleanup failed.");
+          return jsonResponse({ error: "Login assignment failed and cleanup was incomplete. Contact the system administrator." }, 500, origin);
+        }
+        if (siteUpdateError) throw siteUpdateError;
+        return invalid("The client assignment changed while this request was processing. Refresh and try again.", origin);
+      }
+
+      const { error: oldAssignmentError } = await serviceClient.from("site_admins")
+        .delete()
+        .eq("site_id", siteId)
+        .eq("user_id", site.client_user_id);
+      if (oldAssignmentError) {
+        const { error: siteRollbackError } = await serviceClient.from("managed_sites")
+          .update({
+            client_email: site.client_email,
+            client_user_id: site.client_user_id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("site_id", siteId)
+          .eq("client_user_id", newUserId);
+        const { error: assignmentCleanupError } = await serviceClient.from("site_admins")
+          .delete()
+          .eq("site_id", siteId)
+          .eq("user_id", newUserId);
+        const cleanupSucceeded = await deleteCreatedUser((id) => serviceClient.auth.admin.deleteUser(id), newUserId);
+        if (siteRollbackError || assignmentCleanupError || !cleanupSucceeded) {
+          console.error("Replacement login rollback failed:", siteRollbackError?.message || assignmentCleanupError?.message || "Client user cleanup failed.");
+          return jsonResponse({ error: "The new login was created but the old site access could not be safely removed or rolled back. Contact the system administrator." }, 500, origin);
+        }
+        throw oldAssignmentError;
+      }
+
+      await recordActivity(siteId, "client_login_replaced", `Replaced the site client login with ${email}; the previous account remains available for other sites.`);
+      return jsonResponse({ ok: true }, 200, origin);
+    }
+
     if (body.action === "restore_client") {
       const siteId = String(body.site_id || "").trim();
       const { data: site, error: siteError } = await serviceClient

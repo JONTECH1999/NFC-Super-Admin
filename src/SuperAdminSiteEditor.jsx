@@ -95,6 +95,38 @@ function stableValue(value) {
   return JSON.stringify(value) ?? 'undefined';
 }
 
+function getLocalDraftKey(siteId, userId) {
+  return `superadmin_site_editor_draft_${siteId}_${userId}`;
+}
+
+function readLocalDraft(key) {
+  try {
+    const stored = localStorage.getItem(key);
+    if (!stored) return null;
+    const draft = JSON.parse(stored);
+    if (
+      !draft
+      || typeof draft !== 'object'
+      || !draft.profile
+      || !Array.isArray(draft.products)
+      || !Array.isArray(draft.customLinks)
+      || !Number.isFinite(draft.savedAt)
+    ) return null;
+    return draft;
+  } catch (error) {
+    console.error('Unable to restore the super-admin site editor draft:', error);
+    return null;
+  }
+}
+
+function clearLocalDraft(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    console.error('Unable to clear the super-admin site editor draft:', error);
+  }
+}
+
 function publishValue(value) {
   if (value === null || value === undefined || value === '') return '—';
   if (Array.isArray(value)) return value.length ? value.map((item) => String(item)).join('\n') : 'None';
@@ -378,20 +410,42 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
   const [emailFollowups, setEmailFollowups] = useState([]);
   const [reviewChoices, setReviewChoices] = useState({});
   const [dirty, setDirty] = useState(false);
+  const [draftCacheKey, setDraftCacheKey] = useState('');
+  const [localDraftSavedAt, setLocalDraftSavedAt] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
   const loadEditor = useCallback(async () => {
     setLoading(true);
+    setDirty(false);
+    setDraftCacheKey('');
+    setLocalDraftSavedAt(null);
     setError('');
     try {
-      const data = await invoke({ action: 'get_site_editor', site_id: site.site_id });
-      setProfile(data.profile || {});
+      const [data, { data: sessionData, error: sessionError }] = await Promise.all([
+        invoke({ action: 'get_site_editor', site_id: site.site_id }),
+        supabase.auth.getSession(),
+      ]);
+      if (sessionError) throw sessionError;
+      if (!sessionData.session?.user?.id) throw new Error('Your sign-in session expired. Please sign in again.');
+
+      const cacheKey = getLocalDraftKey(site.site_id, sessionData.session.user.id);
+      const localDraft = readLocalDraft(cacheKey);
+      const serverDraftUpdatedAt = data.draft_updated_at ? Date.parse(data.draft_updated_at) : 0;
+      const restoreLocalDraft = localDraft && localDraft.savedAt > serverDraftUpdatedAt;
+      const loadedProfile = restoreLocalDraft ? localDraft.profile : data.profile || {};
+      const loadedProducts = restoreLocalDraft ? localDraft.products : data.products || [];
+      const loadedLinks = restoreLocalDraft
+        ? localDraft.customLinks
+        : loadedProfile.custom_links ?? [];
+
+      if (localDraft && !restoreLocalDraft) clearLocalDraft(cacheKey);
+      setDraftCacheKey(cacheKey);
+      setProfile(loadedProfile);
       setLiveProfile(data.live_profile || {});
       setLiveProducts(data.live_products || []);
-      const loadedLinks = data.profile?.custom_links ?? [];
       setCustomLinks(Array.isArray(loadedLinks) ? loadedLinks : []);
-      setProducts((data.products || []).map((product) => ({
+      setProducts(loadedProducts.map((product) => ({
         ...product,
         gallery: Array.isArray(product.gallery) ? product.gallery : [],
       })));
@@ -401,7 +455,11 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
       setRequests(data.requests || []);
       setEmailFollowups(data.email_followups || []);
       setReviewChoices({});
-      setDirty(false);
+      if (restoreLocalDraft) {
+        setDirty(true);
+        setLocalDraftSavedAt(localDraft.savedAt);
+        setNotice('Recovered your unsaved changes from this browser. Save draft when you are ready.');
+      }
     } catch (loadError) {
       setError(loadError.message || 'Could not load this site’s profile data.');
     } finally {
@@ -412,6 +470,23 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
   useEffect(() => {
     loadEditor();
   }, [loadEditor]);
+
+  useEffect(() => {
+    if (!dirty || loading || !draftCacheKey) return;
+    const savedAt = Date.now();
+    try {
+      localStorage.setItem(draftCacheKey, JSON.stringify({
+        profile,
+        products,
+        customLinks,
+        savedAt,
+      }));
+      setLocalDraftSavedAt(savedAt);
+    } catch (storageError) {
+      console.error('Unable to save the super-admin site editor draft:', storageError);
+      setError('Your changes could not be saved in this browser. Click “Save draft” to store them on the server.');
+    }
+  }, [customLinks, dirty, draftCacheKey, loading, products, profile]);
 
   useEffect(() => {
     if (!publishModalOpen) return undefined;
@@ -592,6 +667,8 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
       setDraftUpdatedAt(result.draft_updated_at);
       setPublishedAt(null);
       setDirty(false);
+      clearLocalDraft(draftCacheKey);
+      setLocalDraftSavedAt(null);
       setNotice('Draft saved privately. The live site has not changed.');
       await Promise.all([loadEditor(), onChanged()]);
     } catch (saveError) {
@@ -608,6 +685,8 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
     setNotice('');
     try {
       const result = await invoke({ action: 'publish_site_draft', site_id: site.site_id });
+      clearLocalDraft(draftCacheKey);
+      setLocalDraftSavedAt(null);
       setPublishModalOpen(false);
       setNotice(result.rejection_email_warning
         ? `Draft published. Rejection email delivery needs attention: ${result.rejection_email_warning}`
@@ -745,7 +824,9 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
       <div className="superadmin-draft-status">
         <div>
           <strong>{dirty ? 'Unsaved changes' : hasDraft ? 'Private draft saved' : 'Editing current live content'}</strong>
-          <small>{draftUpdatedAt ? `Last saved ${new Date(draftUpdatedAt).toLocaleString()}` : 'Save a draft to keep edits off the live card.'}</small>
+          {dirty && localDraftSavedAt
+            ? <small>Changes auto-saved in this browser at {new Date(localDraftSavedAt).toLocaleString()}.</small>
+            : <small>{draftUpdatedAt ? `Last saved ${new Date(draftUpdatedAt).toLocaleString()}` : 'Save a draft to keep edits off the live card.'}</small>}
           {publishedAt && !dirty && <small>Last published {new Date(publishedAt).toLocaleString()}</small>}
         </div>
         <span className={`superadmin-status ${site.payment_status === 'paid' ? 'active' : ''}`}>

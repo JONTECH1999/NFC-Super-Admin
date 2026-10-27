@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jenelle Lewis - Realtor & Real Estate Coach</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Montserrat:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: #d1d5db;
+            background-image: radial-gradient(circle at 50% 0%, #e5e7eb 0%, #9ca3af 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 12px;
+            color: #1f2937;
+        }
+
+        /* Smartphone Bezel Wrapper */
+        .phone-container {
+            width: 100%;
+            max-width: 380px;
+            height: 820px;
+            max-height: 95vh;
+            position: relative;
+            margin: auto;
+            display: flex;
+            flex-direction: column;
+            border-radius: 44px;
+            background-color: #f7f8fa;
+            box-shadow: 
+                0 0 0 10px #ffffff,
+                0 0 0 12px #e5e7eb,
+                0 25px 60px -10px rgba(0, 0, 0, 0.35);
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.8);
+        }
+
+        /* Script font for signature logo */
+        .script-title {
+            font-family: 'Alex Brush', cursive;
+        }
+
+        /* Serif font for logo text */
+        .serif-title {
+            font-family: 'Playfair Display', serif;
+        }
+
+        /* Soft Neumorphic Action Buttons */
+        .card-btn {
+            background: #fbfbfd;
+            border-radius: 20px;
+            box-shadow: 
+                6px 6px 14px rgba(0, 0, 0, 0.05),
+                -6px -6px 14px rgba(255, 255, 255, 0.9),
+                inset 0 0 0 1px rgba(229, 231, 235, 0.5);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 14px 8px;
+            cursor: pointer;
+        }
+
+        .card-btn:active {
+            transform: scale(0.95);
+            box-shadow: 
+                2px 2px 6px rgba(0, 0, 0, 0.04),
+                -2px -2px 6px rgba(255, 255, 255, 0.8),
+                inset 0 0 0 1px rgba(211, 47, 47, 0.2);
+        }
+
+        /* Top Banner Red Framing Corners */
+        .banner-box {
+            position: relative;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04);
+            border: 1px solid rgba(229, 231, 235, 0.8);
+        }
+
+        .banner-box::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            width: 24px;
+            height: 24px;
+            border-top: 2.5px solid #d32f2f;
+            border-left: 2.5px solid #d32f2f;
+            border-top-left-radius: 6px;
+        }
+
+        .banner-box::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            width: 24px;
+            height: 24px;
+            border-bottom: 2.5px solid #d32f2f;
+            border-right: 2.5px solid #d32f2f;
+            border-bottom-right-radius: 6px;
+        }
+
+        /* Scrollbar styling */
+        .scroll-content::-webkit-scrollbar {
+            width: 3px;
+        }
+        .scroll-content::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .scroll-content::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.15);
+            border-radius: 4px;
+        }
+
+        /* Smooth accordion height transition */
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.35s ease-out;
+        }
+
+        /* Floating Creator Promo Badge */
+        .card-promo-badge {
+            position: fixed;
+            top: 4px;
+            right: 10px;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: transparent;
+            border: 1px solid transparent;
+            box-shadow: none;
+            font-size: 11px;
+            color: #1f2937;
+            font-weight: 500;
+        }
+        .card-promo-badge a {
+            color: #d32f2f;
+            font-weight: 700;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .card-promo-badge a:hover {
+            text-decoration: underline;
+        }
+        @media (max-width: 480px) {
+            .card-promo-badge {
+                font-size: 10px;
+                padding: 2px 6px;
+                gap: 5px;
+                top: 2px;
+                right: 6px;
+            }
+        }
+
+        /* ?? Digipen Calligraphic Intro Screen ?? */
+        .ivory-intro-screen {
+            position: fixed;
+            z-index: 3000;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+            background: radial-gradient(ellipse at 50% 42%, rgba(211, 47, 47, 0.12), transparent 26rem), #f8f9fb;
+            opacity: 1;
+            transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), visibility 0s, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1), filter 0.7s ease;
+        }
+
+        .ivory-intro-screen.is-exiting {
+            visibility: hidden;
+            opacity: 0;
+            filter: blur(10px);
+            transform: scale(1.035);
+            pointer-events: none;
+            transition-delay: 0s, 0.55s, 0s, 0s;
+        }
+
+        .ivory-intro-content {
+            position: relative;
+            z-index: 1;
+            width: min(88vw, 370px);
+            text-align: center;
+            perspective: 1000px;
+            animation: ivory-intro-content-arrive 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+
+        .ivory-intro-card {
+            position: relative;
+            display: flex;
+            min-height: 420px;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            padding: 38px 28px 30px;
+            border: 1px solid rgba(229, 231, 235, 0.95);
+            border-radius: 32px;
+            background: #ffffff;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.09), 0 0 0 1px rgba(211, 47, 47, 0.08);
+            isolation: isolate;
+            animation: ivory-intro-card-float 5s ease-in-out 0.9s infinite;
+        }
+
+        .ivory-intro-card-glow {
+            position: absolute;
+            z-index: -1;
+            top: -120px;
+            left: 50%;
+            width: 320px;
+            height: 320px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(211, 47, 47, 0.16), transparent 70%);
+            filter: blur(8px);
+            transform: translateX(-50%);
+            animation: ivory-intro-glow-breathe 4s ease-in-out infinite;
+        }
+
+        .ivory-digipen-badge {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 24px;
+            padding: 6px 16px;
+            border-radius: 999px;
+            background: #fbfbfd;
+            border: 1px solid rgba(229, 231, 235, 0.9);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+            animation: ivory-intro-content-arrive 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+
+        .ivory-digipen-chip-icon {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: #fee2e2;
+            color: #d32f2f;
+            font-size: 0.68rem;
+        }
+
+        .ivory-digipen-chip-tag {
+            color: #374151;
+            font-size: 0.62rem;
+            font-weight: 750;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        .ivory-digipen-nfc-wave {
+            position: absolute;
+            inset: -3px;
+            border: 1.5px solid rgba(211, 47, 47, 0.5);
+            border-radius: 999px;
+            pointer-events: none;
+            animation: ivory-nfc-ripple 2.4s cubic-bezier(0.1, 0.8, 0.2, 1) infinite;
+        }
+
+        .ivory-digipen-nfc-wave.wave-2 {
+            animation-delay: 1.2s;
+        }
+
+        .ivory-writing-stage {
+            position: relative;
+            width: 100%;
+            padding: 12px 0 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: visible;
+        }
+
+        .ivory-handwritten-wrap {
+            position: relative;
+            display: inline-block;
+            text-align: center;
+            margin: 0 auto;
+            padding: 0 4px;
+        }
+
+        .ivory-pen-stylus-carrier {
+            position: absolute;
+            z-index: 10;
+            bottom: 8px;
+            left: 0;
+            margin-left: -18px;
+            width: 36px;
+            height: 135px;
+            pointer-events: none;
+            transform-origin: 50% 100%;
+            filter: drop-shadow(-6px 12px 14px rgba(0, 0, 0, 0.3));
+            animation: ivory-pen-letter-tracking 1.35s linear 0.25s forwards;
+        }
+
+        .ivory-stylus-svg {
+            display: block;
+            width: 100%;
+            height: 100%;
+            transform-origin: 50% 100%;
+            transform: rotate(26deg);
+        }
+
+        .ivory-contact-bloom {
+            position: absolute;
+            left: 50%;
+            bottom: 0px;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #d32f2f;
+            box-shadow: 0 0 10px rgba(211, 47, 47, 0.95), 0 0 20px rgba(211, 47, 47, 0.5);
+            transform: translate(-50%, 50%);
+            animation: ivory-contact-bloom-pulse 0.28s ease-in-out infinite alternate;
+        }
+
+        .ivory-handwritten-wrap {
+            position: relative;
+            display: inline-block;
+            text-align: center;
+            margin: 0 auto;
+        }
+
+        .ivory-handwritten-name {
+            display: block;
+            font-family: 'Alex Brush', cursive;
+            font-size: clamp(2.3rem, 9.5vw, 3.3rem);
+            font-weight: 400;
+            color: #d32f2f;
+            line-height: 1.15;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+            -webkit-clip-path: inset(0 100% 0 0);
+            clip-path: inset(0 100% 0 0);
+            animation: ivory-calligraphy-stroke 1.35s linear 0.25s forwards;
+        }
+
+        .ivory-handwritten-underline {
+            position: absolute;
+            bottom: -4px;
+            left: 5%;
+            width: 90%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #d32f2f, transparent);
+            border-radius: 2px;
+            transform: scaleX(0);
+            transform-origin: left;
+            animation: ivory-underline-expand 0.8s cubic-bezier(0.16, 1, 0.3, 1) 1.45s forwards;
+        }
+
+        .ivory-intro-copy {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            opacity: 0;
+            animation: ivory-intro-copy-reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 1.35s forwards;
+        }
+
+        .ivory-intro-role {
+            margin: 0;
+            color: #6b7280;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        .ivory-intro-business {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            background: #f3f4f6;
+            color: #374151;
+            font-size: 0.65rem;
+            font-weight: 700;
+        }
+
+        .ivory-intro-business i {
+            color: #d32f2f;
+        }
+
+        .ivory-intro-loader {
+            width: min(210px, 72vw);
+            height: 3px;
+            overflow: hidden;
+            margin-top: 22px;
+            border-radius: 99px;
+            background: rgba(211, 47, 47, 0.12);
+            opacity: 0;
+            animation: ivory-intro-copy-reveal 0.5s ease 1.25s forwards;
+        }
+
+        .ivory-intro-loader span {
+            display: block;
+            width: 38%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #d32f2f, #ef4444, #d32f2f);
+            box-shadow: 0 0 14px rgba(211, 47, 47, 0.4);
+            transform: translateX(-110%);
+            animation: ivory-intro-progress 1.2s ease-in-out infinite;
+        }
+
+        .ivory-intro-caption {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            margin: 12px 0 0;
+            color: #9ca3af;
+            font-size: 0.65rem;
+            font-weight: 600;
+            opacity: 0;
+            animation: ivory-intro-copy-reveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) 1.35s forwards;
+        }
+
+        .ivory-intro-loading-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #d32f2f;
+            animation: ivory-intro-dot-pulse 1.4s ease-in-out infinite;
+        }
+
+        @keyframes ivory-nfc-ripple {
+            0% { transform: scale(0.95); opacity: 0.9; }
+            100% { transform: scale(1.6); opacity: 0; }
+        }
+
+        @keyframes ivory-pen-letter-tracking {
+            0% { left: -2%; transform: translateY(-45px) rotate(32deg) scale(0.95); opacity: 0; }
+            5% { left: 0%; transform: translateY(-2px) rotate(26deg) scale(1); opacity: 1; }
+            15% { left: 12%; transform: translateY(-6px) rotate(28deg); }
+            25% { left: 24%; transform: translateY(2px) rotate(24deg); }
+            38% { left: 38%; transform: translateY(-5px) rotate(27deg); }
+            50% { left: 52%; transform: translateY(1px) rotate(25deg); }
+            65% { left: 68%; transform: translateY(-6px) rotate(28deg); }
+            78% { left: 82%; transform: translateY(2px) rotate(24deg); }
+            90% { left: 100%; transform: translateY(-1px) rotate(26deg) scale(1); opacity: 1; }
+            95% { left: 101%; transform: translateY(-24px) rotate(32deg) scale(0.98); opacity: 0.9; }
+            100% { left: 103%; transform: translateY(-65px) rotate(38deg) scale(0.9); opacity: 0; }
+        }
+
+        @keyframes ivory-contact-bloom-pulse {
+            0% { transform: translate(-50%, 50%) scale(0.7); opacity: 0.7; }
+            100% { transform: translate(-50%, 50%) scale(1.35); opacity: 1; }
+        }
+
+        @keyframes ivory-calligraphy-stroke {
+            0% { -webkit-clip-path: inset(0 100% 0 0); clip-path: inset(0 100% 0 0); }
+            5% { -webkit-clip-path: inset(0 100% 0 0); clip-path: inset(0 100% 0 0); }
+            90% { -webkit-clip-path: inset(0 0% 0 0); clip-path: inset(0 0% 0 0); }
+            100% { -webkit-clip-path: inset(0 0% 0 0); clip-path: inset(0 0% 0 0); }
+        }
+
+        @keyframes ivory-underline-expand {
+            0% { transform: scaleX(0); opacity: 0; }
+            100% { transform: scaleX(1); opacity: 1; }
+        }
+
+        @keyframes ivory-ink-burst {
+            0%, 100% { opacity: 0; transform: scale(0.4); }
+            15%, 85% { opacity: 0.85; transform: scale(1.3); }
+        }
+
+        @keyframes ivory-intro-content-arrive {
+            from { opacity: 0; transform: translateY(26px) scale(0.94) rotateX(5deg); }
+            to { opacity: 1; transform: translateY(0) scale(1) rotateX(0); }
+        }
+
+        @keyframes ivory-intro-card-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-7px); }
+        }
+
+        @keyframes ivory-intro-glow-breathe {
+            0%, 100% { opacity: 0.62; transform: translateX(-50%) scale(0.9); }
+            50% { opacity: 1; transform: translateX(-50%) scale(1.08); }
+        }
+
+        @keyframes ivory-intro-copy-reveal {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes ivory-intro-progress {
+            0%, 100% { transform: translateX(-110%); }
+            50% { transform: translateX(260%); }
+        }
+
+        @keyframes ivory-intro-dot-pulse {
+            0%, 100% { opacity: 0.45; transform: scale(0.78); }
+            50% { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="select-none">
+
+    <!-- FLOATING CREATOR PROMO BADGE -->
+    <aside class="card-promo-badge" aria-label="Create a business card">
+        <span>Want a Smart NFC Business Card like this?</span>
+        <a href="https://calling-card.web.app/" target="_blank" rel="noopener noreferrer">
+            Click here
+            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+        </a>
+    </aside>
+
+    <!-- CINEMATIC DIGIPEN INTRO SCREEN -->
+    <div id="digipen-intro" class="ivory-intro-screen" role="status" aria-live="polite">
+        <div class="ivory-intro-content">
+            <div class="ivory-intro-card">
+                <span class="ivory-intro-card-glow" aria-hidden="true"></span>
+
+                <!-- Digipen Smart Pen Badge -->
+                <div class="ivory-digipen-badge">
+                    <span class="ivory-digipen-nfc-wave" aria-hidden="true"></span>
+                    <span class="ivory-digipen-nfc-wave wave-2" aria-hidden="true"></span>
+                    <span class="ivory-digipen-chip-icon" aria-hidden="true">
+                        <i class="fa-solid fa-pen-nib"></i>
+                    </span>
+                    <span class="ivory-digipen-chip-tag">Digipen Smart NFC</span>
+                </div>
+
+                <!-- Writing Stage & Zero-Distance Digipen Contact -->
+                <div class="ivory-writing-stage">
+                    <div class="ivory-handwritten-wrap">
+                        <span class="ivory-handwritten-name">Jenelle Lewis</span>
+                        <span class="ivory-handwritten-underline" aria-hidden="true"></span>
+
+                        <div class="ivory-pen-stylus-carrier" aria-hidden="true">
+                            <svg class="ivory-stylus-svg" viewBox="0 0 48 180" width="36" height="135">
+                                <defs>
+                                    <linearGradient id="htmlDigipenBarrel" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" stop-color="#18181b" />
+                                        <stop offset="35%" stop-color="#27272a" />
+                                        <stop offset="65%" stop-color="#3f3f46" />
+                                        <stop offset="85%" stop-color="#27272a" />
+                                        <stop offset="100%" stop-color="#09090b" />
+                                    </linearGradient>
+                                    <linearGradient id="htmlDigipenGold" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" stop-color="#b45309" />
+                                        <stop offset="25%" stop-color="#f59e0b" />
+                                        <stop offset="55%" stop-color="#fef3c7" />
+                                        <stop offset="80%" stop-color="#f59e0b" />
+                                        <stop offset="100%" stop-color="#92400e" />
+                                    </linearGradient>
+                                    <linearGradient id="htmlDigipenSteel" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" stop-color="#52525b" />
+                                        <stop offset="50%" stop-color="#d4d4d8" />
+                                        <stop offset="100%" stop-color="#3f3f46" />
+                                    </linearGradient>
+                                    <filter id="htmlDigipenShadow" x="-20%" y="-20%" width="150%" height="150%">
+                                        <feDropShadow dx="-2" dy="4" stdDeviation="3" flood-color="#000" flood-opacity="0.35" />
+                                    </filter>
+                                </defs>
+                                <path d="M 18 4 Q 24 0 30 4 L 32 10 L 16 10 Z" fill="url(#htmlDigipenGold)" />
+                                <circle cx="24" cy="5" r="1.8" fill="#d32f2f" />
+                                <rect x="16" y="10" width="16" height="60" rx="1.5" fill="url(#htmlDigipenBarrel)" />
+                                <path d="M 29 14 L 34 18 L 34 50 L 30 52 L 29 48 Z" fill="url(#htmlDigipenGold)" filter="url(#htmlDigipenShadow)" />
+                                <rect x="15" y="70" width="18" height="5" fill="url(#htmlDigipenGold)" />
+                                <line x1="15" y1="72.5" x2="33" y2="72.5" stroke="#78350f" stroke-width="0.5" />
+                                <rect x="16.5" y="75" width="15" height="42" fill="url(#htmlDigipenBarrel)" />
+                                <path d="M 16.5 117 L 31.5 117 L 29 145 L 19 145 Z" fill="url(#htmlDigipenSteel)" />
+                                <line x1="18" y1="124" x2="30" y2="124" stroke="#27272a" stroke-width="0.8" opacity="0.5" />
+                                <line x1="18.5" y1="131" x2="29.5" y2="131" stroke="#27272a" stroke-width="0.8" opacity="0.5" />
+                                <line x1="19" y1="138" x2="29" y2="138" stroke="#27272a" stroke-width="0.8" opacity="0.5" />
+                                <path d="M 19 145 L 29 145 L 26 166 L 22 166 Z" fill="url(#htmlDigipenGold)" />
+                                <path d="M 22 166 L 26 166 L 24.8 175 L 23.2 175 Z" fill="url(#htmlDigipenSteel)" />
+                                <circle cx="24" cy="177.5" r="1.4" fill="#d32f2f" />
+                            </svg>
+                            <span class="ivory-contact-bloom"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ivory-intro-copy">
+                    <p class="ivory-intro-role">Realtor | Real Estate Coach</p>
+                    <span class="ivory-intro-business">
+                        <i class="fa-solid fa-id-card"></i>
+                        Signature Properties
+                    </span>
+                </div>
+
+                <div class="ivory-intro-loader is-ready" role="presentation">
+                    <span></span>
+                </div>
+
+                <p class="ivory-intro-caption">
+                    <span class="ivory-intro-loading-dot" aria-hidden="true"></span>
+                    Writing personalized profile via Digipen...
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- SMARTPHONE DEVICE CONTAINER -->
+    <div class="phone-container">
+
+        <!-- Phone Top Speaker & Sensor Bar -->
+        <div class="w-full h-7 bg-transparent flex justify-center items-center shrink-0 pt-2 z-30 relative">
+            <div class="w-20 h-1.5 bg-gray-300 rounded-full"></div>
+            <div class="w-2.5 h-2.5 bg-gray-300 rounded-full absolute right-8 top-3"></div>
+        </div>
+
+        <!-- SCROLLABLE CONTENT BODY -->
+        <div class="flex-1 overflow-y-auto scroll-content px-4 py-3 relative">
+            
+            <!-- HEADER BRANDING BANNER -->
+            <div class="banner-box p-4 mb-5 mt-1 text-center relative overflow-hidden">
+                <div class="flex items-center justify-between">
+                    
+                    <!-- Left: Script + Serif Logo Text -->
+                    <div class="text-left pl-1">
+                        <div class="flex items-baseline space-x-1">
+                            <span class="script-title text-4xl text-[#d32f2f] font-normal leading-none">Jenelle</span>
+                            <span class="serif-title text-xl font-bold tracking-widest text-gray-800 uppercase">LEWIS</span>
+                        </div>
+                        <p class="text-[9px] font-semibold tracking-wider text-gray-500 uppercase mt-1">
+                            THERE'S NO PLACE LIKE HOME.
+                        </p>
+                    </div>
+
+                    <!-- Right: Real Estate Logo Icon -->
+                    <div class="pr-1 text-right text-[#d32f2f]">
+                        <div class="relative inline-block">
+                            <i class="fa-solid fa-house-chimney-window text-2xl"></i>
+                            <i class="fa-solid fa-check text-[10px] absolute -bottom-0.5 -right-1 bg-white rounded-full p-0.5 text-[#d32f2f]"></i>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- PROFILE PHOTO & INFO SECTION -->
+            <div class="flex items-center space-x-4 mb-6 pl-1">
+                <!-- Square Profile Picture -->
+                <div class="w-24 h-24 rounded-2xl overflow-hidden shrink-0 shadow-md border-2 border-white relative bg-gray-200">
+                    <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400&h=400" 
+                         alt="Jenelle Lewis" 
+                         onerror="this.src='https://placehold.co/400x400/e5e7eb/d32f2f?text=Jenelle+Lewis';"
+                         class="w-full h-full object-cover">
+                </div>
+
+                <!-- Name & Title -->
+                <div>
+                    <h1 class="text-lg font-light tracking-wider text-gray-800 uppercase leading-tight">
+                        JENELLE LEWIS
+                    </h1>
+                    <p class="text-xs font-medium text-gray-500 mt-1">
+                        Realtor | Real Estate Coach
+                    </p>
+                </div>
+            </div>
+
+            <!-- ACTION BUTTONS GRID (3 Columns) -->
+            <div class="grid grid-cols-3 gap-3.5 mb-3.5">
+                
+                <!-- CALL -->
+                <a href="tel:+18005550199" onclick="showToast('Calling Jenelle Lewis...')" class="card-btn group">
+                    <div class="w-10 h-10 flex items-center justify-center text-[#d32f2f] text-xl mb-1.5 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-phone-volume"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-gray-500 tracking-wider">CALL</span>
+                </a>
+
+                <!-- EMAIL -->
+                <a href="mailto:jenelle.lewis@realestate.com" onclick="showToast('Opening Mail...')" class="card-btn group">
+                    <div class="w-10 h-10 flex items-center justify-center text-[#d32f2f] text-xl mb-1.5 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-envelope"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-gray-500 tracking-wider">EMAIL</span>
+                </a>
+
+                <!-- TEXT -->
+                <a href="sms:+18005550199" onclick="showToast('Opening SMS...')" class="card-btn group">
+                    <div class="w-10 h-10 flex items-center justify-center text-[#d32f2f] text-xl mb-1.5 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-[#d32f2f] fa-comment-dots"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-gray-500 tracking-wider">TEXT</span>
+                </a>
+
+                <!-- FACEBOOK -->
+                <a href="https://facebook.com" target="_blank" onclick="showToast('Opening Facebook...')" class="card-btn group">
+                    <div class="w-10 h-10 flex items-center justify-center text-[#d32f2f] text-2xl mb-1.5 group-hover:scale-110 transition-transform">
+                        <i class="fa-brands fa-facebook-f"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-gray-500 tracking-wider">FACEBOOK</span>
+                </a>
+
+                <!-- YOUTUBE -->
+                <a href="https://youtube.com" target="_blank" onclick="showToast('Opening YouTube...')" class="card-btn group">
+                    <div class="w-10 h-10 flex items-center justify-center text-[#d32f2f] text-xl mb-1.5 group-hover:scale-110 transition-transform">
+                        <i class="fa-brands fa-youtube"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-gray-500 tracking-wider">YOUTUBE</span>
+                </a>
+
+                <!-- WEBSITE -->
+                <a href="https://example.com" target="_blank" onclick="showToast('Opening Website...')" class="card-btn group">
+                    <div class="w-10 h-10 flex items-center justify-center text-[#d32f2f] text-xl mb-1.5 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-globe"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-gray-500 tracking-wider">WEBSITE</span>
+                </a>
+
+            </div>
+
+            <!-- ROW 3: TIKTOK & SAVE CONTACT (2 Columns) -->
+            <div class="grid grid-cols-2 gap-3.5 mb-5">
+                
+                <!-- TIKTOK -->
+                <a href="https://tiktok.com" target="_blank" onclick="showToast('Opening TikTok...')" class="card-btn group py-3">
+                    <div class="w-9 h-9 flex items-center justify-center text-[#d32f2f] text-xl mb-1 group-hover:scale-110 transition-transform">
+                        <i class="fa-brands fa-tiktok"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-gray-500 tracking-wider">TIKTOK</span>
+                </a>
+
+                <!-- SAVE CONTACT -->
+                <button onclick="downloadVCard()" class="card-btn group py-3">
+                    <div class="w-9 h-9 flex items-center justify-center text-[#d32f2f] text-xl mb-1 group-hover:scale-110 transition-transform">
+                        <i class="fa-solid fa-address-card"></i>
+                    </div>
+                    <span class="text-[10px] font-bold text-gray-500 tracking-wider">SAVE CONTACT</span>
+                </button>
+
+            </div>
+
+            <!-- COLLAPSIBLE ACCORDION: ABOUT JENELLE LEWIS -->
+            <div class="border border-gray-300/80 rounded-2xl bg-white overflow-hidden shadow-sm">
+                <!-- Accordion Header Bar -->
+                <button onclick="toggleAccordion()" class="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-gray-50 transition-colors">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-[#d32f2f] font-bold text-sm">+</span>
+                        <span class="text-xs font-bold text-[#d32f2f]">About Jenelle Lewis</span>
+                    </div>
+                    <i id="accordion-icon" class="fa-solid fa-chevron-down text-xs text-gray-400 transition-transform duration-300"></i>
+                </button>
+
+                <!-- Accordion Content Body -->
+                <div id="accordion-content" class="accordion-content px-4 bg-gray-50/50">
+                    <div class="py-3.5 border-t border-gray-100 text-xs text-gray-600 leading-relaxed space-y-2.5">
+                        <p>
+                            Welcome! I'm <strong class="text-gray-800">Jenelle Lewis</strong>, a top-producing Realtor and dedicated Real Estate Coach with over a decade of experience guiding home buyers, sellers, and investors.
+                        </p>
+                        <p>
+                            My philosophy is simple: <em class="text-[#d32f2f]">"There's no place like home."</em> Whether you're purchasing your first property, scaling your real estate portfolio, or looking for expert coaching to build a successful career, I'm here to support your journey.
+                        </p>
+                        <div class="pt-2 flex flex-wrap gap-2">
+                            <span class="bg-red-50 text-[#d32f2f] text-[10px] font-semibold px-2.5 py-1 rounded-full border border-red-100">Residential Sales</span>
+                            <span class="bg-red-50 text-[#d32f2f] text-[10px] font-semibold px-2.5 py-1 rounded-full border border-red-100">Property Investments</span>
+                            <span class="bg-red-50 text-[#d32f2f] text-[10px] font-semibold px-2.5 py-1 rounded-full border border-red-100">Agent Mentorship</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Phone Home Navigation Bar -->
+        <div class="w-full h-5 bg-transparent flex items-center justify-center shrink-0 z-30 pb-1">
+            <div class="w-28 h-1 bg-gray-400/60 rounded-full"></div>
+        </div>
+
+    </div>
+
+    <!-- TOAST NOTIFICATION -->
+    <div id="toast" class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-4 py-2.5 rounded-full shadow-2xl text-xs font-medium opacity-0 pointer-events-none transition-opacity duration-300 z-50 flex items-center space-x-2 border border-gray-700">
+        <i class="fa-solid fa-circle-check text-red-500"></i>
+        <span id="toast-message">Notification</span>
+    </div>
+
+    <script>
+        // Toast Notification Trigger
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-message');
+            toastMsg.textContent = msg;
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 2500);
+        }
+
+        // Accordion Toggle Logic
+        function toggleAccordion() {
+            const content = document.getElementById('accordion-content');
+            const icon = document.getElementById('accordion-icon');
+            
+            if (content.style.maxHeight && content.style.maxHeight !== '0px') {
+                content.style.maxHeight = '0px';
+                icon.classList.remove('rotate-180');
+            } else {
+                content.style.maxHeight = content.scrollHeight + 'px';
+                icon.classList.add('rotate-180');
+            }
+        }
+
+        // Dynamic vCard Download (.vcf)
+        function downloadVCard() {
+            const vcard = `BEGIN:VCARD
+VERSION:3.0
+FN:Jenelle Lewis
+TITLE:Realtor | Real Estate Coach
+TEL;TYPE=CELL:+18005550199
+EMAIL:jenelle.lewis@realestate.com
+URL:https://example.com
+NOTE:Jenelle Lewis - Realtor & Real Estate Coach. There's no place like home.
+END:VCARD`;
+
+            const blob = new Blob([vcard], { type: 'text/vcard' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'Jenelle_Lewis.vcf';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+            showToast('Saved Jenelle Lewis contact!');
+        }
+        // Intro Screen Auto Dismiss
+        window.addEventListener('DOMContentLoaded', () => {
+            const intro = document.getElementById('digipen-intro');
+            if (intro) {
+                setTimeout(() => {
+                    intro.classList.add('is-exiting');
+                    setTimeout(() => {
+                        intro.style.display = 'none';
+                    }, 650);
+                }, 2100);
+            }
+        });
+    </script>
+</body>
+</html>

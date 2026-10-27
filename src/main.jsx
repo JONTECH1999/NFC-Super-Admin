@@ -7,8 +7,31 @@ const isAdmin = window.location.pathname.replace(/\/+$/, "").startsWith("/admin"
 const isSuperAdmin = window.location.hostname === "superadmin-callingcard.web.app"
   || window.location.pathname.replace(/\/+$/, "").startsWith("/superadmin");
 const isEditRequest = window.location.pathname.replace(/\/+$/, "").startsWith("/edit-request");
+const isDigipen = !isAdmin && (
+  window.location.hostname === "digital-callingcard01.web.app"
+  || window.location.pathname.replace(/\/+$/, "") === "/digipen"
+);
+const normalizedPath = window.location.pathname.replace(/\/+$/, "");
+const isIvory = normalizedPath === "/soft-neumorphic-ivory"
+  || (window.location.hostname === "calling-card-d5.web.app" && normalizedPath === "");
 
-if (isEditRequest) {
+if (isIvory) {
+  import("./i_2_Soft Neumorphic Ivory").then(({ default: SoftNeumorphicIvory }) => {
+    ReactDOM.createRoot(document.getElementById("root")).render(
+      <React.StrictMode>
+        <SoftNeumorphicIvory />
+      </React.StrictMode>,
+    );
+  });
+} else if (isDigipen) {
+  import("./Midnight Monochrome").then(({ default: Digipen }) => {
+    ReactDOM.createRoot(document.getElementById("root")).render(
+      <React.StrictMode>
+        <Digipen />
+      </React.StrictMode>,
+    );
+  });
+} else if (isEditRequest) {
   import("./EditRequest").then(({ default: EditRequest }) => {
     ReactDOM.createRoot(document.getElementById("root")).render(
       <React.StrictMode>

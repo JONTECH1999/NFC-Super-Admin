@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
@@ -13,6 +14,7 @@ const tenantBuilds = {
   d1: "calling-card-d1",
   remo: "main",
   aljon: "aljon-contacts",
+  "digital-callingcard01": "digital-callingcard01",
 };
 
 export default defineConfig(({ mode }) => {
@@ -29,7 +31,9 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         input: Object.fromEntries(
-          htmlPages.map((page) => [page.slice(0, -5), resolve(rootDir, page)]),
+          htmlPages
+            .filter((page) => existsSync(resolve(rootDir, page)))
+            .map((page) => [page.slice(0, -5), resolve(rootDir, page)]),
         ),
       },
     },
