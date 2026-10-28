@@ -2817,11 +2817,11 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 16px 0 14px;
-  padding: 4px;
-  background: rgba(15, 23, 42, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  margin: 16px 0 16px;
+  padding: 6px;
+  background: rgba(139, 90, 54, 0.08);
+  border: 1px solid var(--theme-line);
+  border-radius: 14px;
 }
 
 .superadmin-category-tab {
@@ -2846,8 +2846,8 @@
 
 .superadmin-category-tab.active {
   color: #ffffff;
-  background: #2563eb;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+  background: linear-gradient(135deg, #8b5a36, #6f4323);
+  box-shadow: 0 4px 14px rgba(111, 67, 35, 0.28);
 }
 
 .superadmin-tab-icon {
@@ -3425,35 +3425,35 @@
 .superadmin-shell[data-theme="light"],
 .superadmin-login-wrap[data-theme="light"],
 .superadmin-loading[data-theme="light"] {
-  --theme-text: #1e293b;
-  --theme-muted: #64748b;
-  --theme-line: #dbe3ed;
-  --theme-surface: rgba(255, 255, 255, 0.88);
-  --theme-surface-raised: #fff;
-  --theme-field: #fff;
-  --theme-accent: #2563eb;
-  --theme-accent-strong: #1d4ed8;
+  --theme-text: #2c221e;
+  --theme-muted: #7d6e63;
+  --theme-line: #e7dfd4;
+  --theme-surface: rgba(253, 250, 245, 0.94);
+  --theme-surface-raised: #fbf7f0;
+  --theme-field: #fdfbf7;
+  --theme-accent: #8b5a36;
+  --theme-accent-strong: #6f4323;
   color: var(--theme-text);
   background:
     radial-gradient(ellipse at 82% 2%, rgba(255, 255, 255, 0.96), transparent 36%),
-    linear-gradient(135deg, #f1f5f9, #f8fafc 58%, #eaf0f7);
+    linear-gradient(135deg, #f5efe6, #faf7f2 58%, #eee6db);
 }
 
 .superadmin-shell[data-theme="dark"],
 .superadmin-login-wrap[data-theme="dark"],
 .superadmin-loading[data-theme="dark"] {
-  --theme-text: #e2e8f0;
-  --theme-muted: #9aaabe;
-  --theme-line: #334155;
-  --theme-surface: rgba(30, 41, 59, 0.88);
-  --theme-surface-raised: #1e293b;
-  --theme-field: #111c2d;
-  --theme-accent: #7aa7ff;
-  --theme-accent-strong: #4f83ed;
+  --theme-text: #f5ede4;
+  --theme-muted: #b5a494;
+  --theme-line: #3d3027;
+  --theme-surface: rgba(30, 23, 19, 0.94);
+  --theme-surface-raised: #281e18;
+  --theme-field: #1a130f;
+  --theme-accent: #d8a47f;
+  --theme-accent-strong: #bf8963;
   color: var(--theme-text);
   background:
     radial-gradient(ellipse at 82% 2%, rgba(51, 65, 85, 0.42), transparent 36%),
-    linear-gradient(135deg, #0b1220, #111827 58%, #131d2b);
+    linear-gradient(135deg, #140f0c, #1b1410 58%, #18120e);
 }
 
 .superadmin-shell[data-theme="light"] .superadmin-sidebar {
@@ -3475,8 +3475,8 @@
 .superadmin-shell[data-theme="light"] .superadmin-nav a:hover,
 .superadmin-shell[data-theme="light"] .superadmin-brand-icon {
   color: #fff;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  box-shadow: 0 5px 16px rgba(37, 99, 235, 0.2);
+  background: linear-gradient(135deg, #9c6644, #7f4f24);
+  box-shadow: 0 5px 16px rgba(139, 90, 54, 0.2);
 }
 
 .superadmin-shell[data-theme="dark"] .superadmin-sidebar {
@@ -3501,8 +3501,8 @@
 .superadmin-shell[data-theme="dark"] .superadmin-nav a:hover,
 .superadmin-shell[data-theme="dark"] .superadmin-brand-icon {
   color: #fff;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  box-shadow: 0 5px 18px rgba(37, 99, 235, 0.25);
+  background: linear-gradient(135deg, #9c6644, #7f4f24);
+  box-shadow: 0 5px 18px rgba(139, 90, 54, 0.25);
 }
 
 .superadmin-shell[data-theme="light"] .superadmin-topbar {
@@ -3531,7 +3531,7 @@
 
 .superadmin-shell[data-theme="light"] .superadmin-eyebrow,
 .superadmin-login-wrap[data-theme="light"] .superadmin-eyebrow {
-  color: #2563eb;
+  color: #8b5a36;
 }
 
 .superadmin-shell[data-theme="dark"] .superadmin-eyebrow,
@@ -3588,24 +3588,24 @@
 
 .superadmin-shell[data-theme="light"] .superadmin-metric-icon,
 .superadmin-shell[data-theme="light"] .superadmin-site-mark {
-  border-color: rgba(37, 99, 235, 0.12);
-  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(139, 90, 54, 0.12);
+  background: rgba(156, 102, 68, 0.1);
 }
 
 .superadmin-shell[data-theme="dark"] .superadmin-metric-icon,
 .superadmin-shell[data-theme="dark"] .superadmin-site-mark {
   border-color: rgba(122, 167, 255, 0.2);
   color: #a9c6ff;
-  background: rgba(59, 130, 246, 0.17);
+  background: rgba(156, 102, 68, 0.17);
 }
 
 .superadmin-shell[data-theme="light"] .superadmin-primary,
 .superadmin-shell[data-theme="light"] .superadmin-manage-link,
 .superadmin-login-wrap[data-theme="light"] .superadmin-primary {
-  border-color: #2563eb;
+  border-color: #8b5a36;
   color: #fff;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  box-shadow: 0 5px 14px rgba(37, 99, 235, 0.16);
+  background: linear-gradient(135deg, #9c6644, #7f4f24);
+  box-shadow: 0 5px 14px rgba(139, 90, 54, 0.16);
 }
 
 .superadmin-shell[data-theme="dark"] .superadmin-primary,
@@ -3614,7 +3614,7 @@
   border-color: #4f83ed;
   color: #fff;
   background: linear-gradient(135deg, #4f83ed, #3566cf);
-  box-shadow: 0 5px 14px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 5px 14px rgba(139, 90, 54, 0.2);
 }
 
 .superadmin-shell[data-theme="light"] .superadmin-secondary,
@@ -3694,8 +3694,8 @@
   .superadmin-review-reason textarea
 ):focus,
 .superadmin-login-wrap[data-theme="light"] .superadmin-login input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.14);
+  border-color: #9c6644;
+  box-shadow: 0 0 0 4px rgba(156, 102, 68, 0.14);
 }
 
 .superadmin-shell[data-theme="dark"] :is(
@@ -3754,13 +3754,13 @@
 }
 
 .superadmin-theme-toggle span[aria-hidden="true"] {
-  color: #2563eb;
+  color: #8b5a36;
   font-size: 1rem;
   line-height: 1;
 }
 
 .superadmin-theme-toggle:focus-visible {
-  outline: 3px solid rgba(37, 99, 235, 0.38);
+  outline: 3px solid rgba(139, 90, 54, 0.38);
   outline-offset: 2px;
 }
 
