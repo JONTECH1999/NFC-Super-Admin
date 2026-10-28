@@ -983,7 +983,7 @@ function SuperAdmin() {
                       <span className="superadmin-operational-item"><small>CONTENT</small><strong>{site.has_unpublished_draft ? 'Unpublished changes' : 'Live content'}</strong><time dateTime={site.published_at || undefined}>{site.published_at ? `Published ${new Date(site.published_at).toLocaleDateString()}` : 'Publish time not tracked'}</time></span>
                       <span className="superadmin-operational-item"><small>HOSTING</small><strong className="not-monitored">Not monitored</strong></span>
                       <span className="superadmin-operational-item"><small>EDIT REQUESTS</small><strong>{site.pending_request_count || 0} pending</strong>{site.oldest_pending_request_at && <time dateTime={site.oldest_pending_request_at}>Oldest waiting {formatAge(site.oldest_pending_request_at)} · {new Date(site.oldest_pending_request_at).toLocaleDateString()}</time>}</span>
-                      {site.missing_configuration?.length > 0 && <p className="superadmin-config-warning">Missing configuration: {site.missing_configuration.join(', ')}</p>}
+                      {!site.isTemplate && site.missing_configuration?.length > 0 && <p className="superadmin-config-warning">Missing configuration: {site.missing_configuration.join(', ')}</p>}
                     </div>
                     <div className="superadmin-site-actions">
                       <button type="button" className="superadmin-manage-link" disabled={busyAction !== ''} onClick={() => setEditingSiteId(site.site_id)}>Edit site</button>
@@ -993,15 +993,17 @@ function SuperAdmin() {
                         <button type="button" className="superadmin-danger" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'revoke_client', `Revoke ${site.client_email}'s access to ${site.name}?`)}>Revoke access</button>
                       </> : site.client_user_id ? (
                         <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'restore_client', `Restore ${site.client_email}'s access to ${site.name}?`)}>Restore access</button>
-                      ) : (
+                      ) : !site.isTemplate ? (
                         <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => { setAssignSite(site); setAssignEmail(''); setAssignPassword(''); setAssignPasswordConfirm(''); setError(''); }}>Create client login</button>
-                      )}
+                      ) : null}
                       {site.site_id === 'aljon-contacts' && !site.is_trial && site.is_active && <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => { setTrialStartSite(site); setTrialStartDays('7'); setError(''); }}>Start trial</button>}
                       <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'set_site_active', `${site.is_active ? 'Pause' : 'Activate'} ${site.name}?`)}>{site.is_active ? 'Pause site' : 'Activate site'}</button>
                       {site.is_trial && <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'extend_trial', `Extend ${site.name}'s preview by 7 days?`)}>Extend 7 days</button>}
-                      <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => setSitePaymentStatus(site, site.payment_status === 'awaiting_payment' ? 'paid' : site.payment_status === 'paid' ? 'none' : 'awaiting_payment')}>
-                        {site.payment_status === 'awaiting_payment' ? 'Mark paid' : site.payment_status === 'paid' ? 'Clear payment' : 'Mark awaiting payment'}
-                      </button>
+                      {!site.isTemplate && (
+                        <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => setSitePaymentStatus(site, site.payment_status === 'awaiting_payment' ? 'paid' : site.payment_status === 'paid' ? 'none' : 'awaiting_payment')}>
+                          {site.payment_status === 'awaiting_payment' ? 'Mark paid' : site.payment_status === 'paid' ? 'Clear payment' : 'Mark awaiting payment'}
+                        </button>
+                      )}
                     </div>
                   </article>
                 ))}
