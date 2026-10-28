@@ -2813,6 +2813,64 @@
   margin-top: 3px;
 }
 
+.superadmin-category-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 14px;
+  padding: 4px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.superadmin-category-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.superadmin-category-tab:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.superadmin-category-tab.active {
+  color: #ffffff;
+  background: #2563eb;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.superadmin-tab-icon {
+  font-size: 0.95rem;
+}
+
+.superadmin-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  padding: 2px 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+}
+
+.superadmin-category-tab.active .superadmin-tab-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
 .superadmin-sites-toolbar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(145px, 0.34fr));

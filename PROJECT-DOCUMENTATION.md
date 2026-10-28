@@ -251,6 +251,62 @@ Calling Card D10 uses dedicated `calling_card_d10_profiles` and
 `npm run deploy:d10`; requests and drafts use the shared workflow with
 `site_id = 'calling-card-d10'`.
 
+### Private prospect previews
+
+The super-admin **Add a site** form can create a prospect trial using the D10
+design. Enter a new site ID, prospect name, login email, and password, then
+enable **Create a time-limited prospect preview**. Each trial gets its own
+empty profile and product tables; no D10 contact details, photos, or products
+are copied. Enter only prospect information they have authorized you to use.
+The form provides a private link in the form
+`https://calling-card-d10.web.app/?site_id=<site-id>`. Send that link yourself
+through a private channel.
+The link is unlisted, not password-protected; anyone who receives or is
+forwarded the link can view the preview. Do not enter confidential information.
+
+Trials default to seven days (the form permits 1–30 days). The Connected sites
+card shows the expiry and the last-seven-day usage summary. Visitors can opt in
+or out of anonymous usage measurement; when opted in, it counts page views and
+daily unique browsers using a random browser token. The application does not
+store visitor names, contact details, IP addresses, or location in its trial
+analytics tables. These metrics are approximate, can be declined, and should
+not be treated as identity verification. Visitors who decline are not counted.
+Trial visitor tokens are pruned after 35 days; daily totals are retained for
+365 days.
+
+At expiry, database access is blocked immediately. A scheduled job marks the
+site inactive within 15 minutes. The preview displays a trial-ended page with
+a link to `https://calling-card.web.app/`. Use **Extend 7 days** in Connected
+sites to reopen an expired trial. Marking a trial as paid ends the trial and
+activates it as a regular site.
+
+The configured Aljon Contacts site can also be started as a trial from its
+Connected sites card. This keeps its existing URL, content, and client login;
+the URL remains public during the trial, and expiry blocks both public viewing
+and client data access until the trial is extended or marked paid.
+
+Before deploying the trial feature to an existing Supabase project:
+
+1. Apply [`prospect-trials-and-analytics.sql`](./prospect-trials-and-analytics.sql)
+   in the Supabase SQL Editor. It adds the trial fields, aggregate analytics
+   tables, expiry-aware policies, provisioning updates, and scheduled cleanup
+   jobs. The project must permit enabling the `pg_cron` extension.
+2. Deploy the updated function:
+
+   ```powershell
+   npx supabase functions deploy super-admin-sites --project-ref YOUR_PROJECT_REF
+   ```
+
+3. Deploy the D10 host and super-admin portal:
+
+   ```powershell
+   npm run deploy:d10
+   npm run deploy:superadmin
+   ```
+
+Do not publish the updated D10 app before applying the migration: preview URLs
+must verify trial availability before displaying content.
+
 Aljon Contacts uses the Remo app template but has its own empty profile,
 product list, local cache namespace, and `aljon-contacts/` image-storage path.
 Build and deploy it with `npm run deploy:aljon`; this uses its own Firebase

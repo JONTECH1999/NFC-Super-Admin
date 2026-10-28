@@ -19,6 +19,17 @@ function formatAge(timestamp) {
   return `${Math.floor(elapsedHours / 24)}d`;
 }
 
+function getClientAdminUrl(site) {
+  try {
+    const url = new URL(site.public_url);
+    url.pathname = '/admin';
+    url.searchParams.set('site_id', site.site_id);
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
 function SuperAdmin() {
   const [theme, setTheme] = useState(() => {
     try {
@@ -36,6 +47,7 @@ function SuperAdmin() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sites, setSites] = useState([]);
   const [editingSiteId, setEditingSiteId] = useState('');
+  const [siteCategoryTab, setSiteCategoryTab] = useState('clients'); // 'clients' | 'trials' | 'templates'
   const [siteSearch, setSiteSearch] = useState('');
   const [siteFilter, setSiteFilter] = useState('all');
   const [siteSort, setSiteSort] = useState('attention');
@@ -56,10 +68,21 @@ function SuperAdmin() {
   const [resetPassword, setResetPassword] = useState('');
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
   const [emailSite, setEmailSite] = useState(null);
+  const [trialStartSite, setTrialStartSite] = useState(null);
+  const [trialStartDays, setTrialStartDays] = useState('7');
   const [clientEmail, setClientEmail] = useState('');
   const [replacementPassword, setReplacementPassword] = useState('');
   const [replacementPasswordConfirm, setReplacementPasswordConfirm] = useState('');
-  const [form, setForm] = useState({ site_id: '', name: '', public_url: '', client_email: '', password: '', confirm_password: '' });
+  const [form, setForm] = useState({
+    site_id: '',
+    name: '',
+    public_url: '',
+    client_email: '',
+    password: '',
+    confirm_password: '',
+    is_trial: false,
+    trial_days: 7,
+  });
 
   useEffect(() => {
     try {
@@ -252,10 +275,27 @@ function SuperAdmin() {
         public_url: form.public_url,
         client_email: form.client_email,
         password: form.password,
+        is_trial: form.is_trial,
+        trial_days: Number(form.trial_days),
       });
-      setCredential({ email: data.site.client_email, password: form.password });
-      setNotice('Site and client login created. Share the password securely; it will not be shown again.');
-      setForm({ site_id: '', name: '', public_url: '', client_email: '', password: '', confirm_password: '' });
+      setCredential({
+        email: data.site.client_email,
+        password: form.password,
+        publicUrl: data.site.public_url,
+      });
+      setNotice(data.site.is_trial
+        ? `${form.trial_days}-day preview created. Share the preview link privately; it expires ${new Date(data.site.trial_ends_at).toLocaleString()}.`
+        : 'Site and client login created. Share the password securely; it will not be shown again.');
+      setForm({
+        site_id: '',
+        name: '',
+        public_url: '',
+        client_email: '',
+        password: '',
+        confirm_password: '',
+        is_trial: false,
+        trial_days: 7,
+      });
       await Promise.all([loadSites(), loadDashboardData()]);
     } catch (createError) {
       setError(createError.message);
@@ -271,11 +311,18 @@ function SuperAdmin() {
     setNotice('');
     setCredential(null);
     try {
-      await invoke({ action, site_id: site.site_id, is_active: action === 'set_site_active' ? !site.is_active : undefined });
+      await invoke({
+        action,
+        site_id: site.site_id,
+        is_active: action === 'set_site_active' ? !site.is_active : undefined,
+        trial_days: action === 'extend_trial' ? 7 : undefined,
+      });
       if (action === 'revoke_client') {
         setNotice(`Client access for ${site.name} was revoked.`);
       } else if (action === 'restore_client') {
         setNotice(`Client access for ${site.name} was restored.`);
+      } else if (action === 'extend_trial') {
+        setNotice(`${site.name}'s preview was extended by 7 days.`);
       } else {
         setNotice(`${site.name} is now ${site.is_active ? 'paused' : 'active'}.`);
       }
@@ -298,6 +345,34 @@ function SuperAdmin() {
       await Promise.all([loadSites(), loadDashboardData()]);
     } catch (paymentError) {
       setError(paymentError.message);
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const handleStartExistingSiteTrial = async (event) => {
+    event.preventDefault();
+    if (!trialStartSite) return;
+    const days = Number(trialStartDays);
+    if (!Number.isInteger(days) || days < 1 || days > 30) {
+      setError('Choose a trial length between 1 and 30 days.');
+      return;
+    }
+    setBusyAction(`start_trial:${trialStartSite.site_id}`);
+    setError('');
+    setNotice('');
+    try {
+      await invoke({
+        action: 'start_trial',
+        site_id: trialStartSite.site_id,
+        trial_days: days,
+      });
+      setNotice(`${trialStartSite.name} is now on a ${days}-day trial. Its existing URL, content, and client login are unchanged.`);
+      setTrialStartSite(null);
+      setTrialStartDays('7');
+      await Promise.all([loadSites(), loadDashboardData()]);
+    } catch (trialError) {
+      setError(trialError.message);
     } finally {
       setBusyAction('');
     }
@@ -425,10 +500,16 @@ function SuperAdmin() {
     }
   };
 
-  const activeSiteCount = sites.filter((site) => site.is_active).length;
-  const pausedSiteCount = sites.length - activeSiteCount;
+  const isTemplateSite = (site) => {
+    return /^calling-card-d(?:[1-9]|10)$/i.test(site.site_id) && !site.client_user_id;
+  };
+
+  const activeSiteCount = sites.filter((site) => site.is_active && !isTemplateSite(site)).length;
+  const pausedSiteCount = sites.filter((site) => !site.is_active && !isTemplateSite(site)).length;
+  const trialSiteCount = sites.filter((site) => site.is_trial).length;
   const clientCount = sites.filter((site) => site.client_user_id && site.client_enabled).length;
-  const sitesNeedingAttention = sites.map((site) => {
+
+  const sitesNeedingAttention = sites.filter((site) => !isTemplateSite(site)).map((site) => {
     const issues = [];
     if (!site.is_active) issues.push('Site paused');
     if (site.missing_configuration?.length) issues.push(...site.missing_configuration);
@@ -444,26 +525,44 @@ function SuperAdmin() {
     else readiness = 'Live';
     return { ...site, issues: [...new Set(issues)], readiness };
   }).filter((site) => site.issues.length > 0);
+
   const paymentSites = sites.filter((site) => site.payment_status === 'awaiting_payment');
-  const unassignedSites = sites.filter((site) => !site.client_user_id);
+  const unassignedSites = sites.filter((site) => !site.client_user_id && !isTemplateSite(site));
+
   const siteOperationalSummary = sites.map((site) => {
     const missingConfiguration = site.missing_configuration || [];
     const hasUnpublishedDraft = Boolean(site.has_unpublished_draft);
-    const issueCount = Number(!site.is_active)
+    const isTemplate = isTemplateSite(site);
+    const category = isTemplate ? 'templates' : site.is_trial ? 'trials' : 'clients';
+
+    const issueCount = isTemplate ? 0 : (
+      Number(!site.is_active)
       + missingConfiguration.length
       + Number(!site.client_user_id || !site.client_enabled)
       + Number(site.payment_status !== 'paid' && hasUnpublishedDraft)
-      + Number((site.pending_request_count || 0) > 0);
+      + Number((site.pending_request_count || 0) > 0)
+    );
+
     let readiness;
-    if (!site.is_active) readiness = 'Paused';
+    if (isTemplate) readiness = 'Template';
+    else if (!site.is_active) readiness = site.trial_expired ? 'Expired' : 'Paused';
     else if (missingConfiguration.length) readiness = 'Needs setup';
     else if (hasUnpublishedDraft && site.payment_status !== 'paid') readiness = 'Payment required';
     else if (hasUnpublishedDraft) readiness = 'Ready to publish';
     else readiness = 'Live';
-    return { ...site, readiness, issueCount };
+
+    return { ...site, readiness, issueCount, category, isTemplate };
   });
+
+  const categorizedCounts = {
+    clients: siteOperationalSummary.filter((s) => s.category === 'clients').length,
+    trials: siteOperationalSummary.filter((s) => s.category === 'trials').length,
+    templates: siteOperationalSummary.filter((s) => s.category === 'templates').length,
+  };
+
   const visibleSites = siteOperationalSummary
     .filter((site) => {
+      if (siteCategoryTab !== 'all' && site.category !== siteCategoryTab) return false;
       const query = siteSearch.trim().toLowerCase();
       const matchesSearch = !query || [
         site.name,
@@ -491,6 +590,7 @@ function SuperAdmin() {
       if (siteSort === 'newest') return b.created_at.localeCompare(a.created_at);
       return b.issueCount - a.issueCount || b.created_at.localeCompare(a.created_at);
     });
+
   const sitesWithUnpublishedChanges = sites.filter((site) => site.has_unpublished_draft).length;
   const totalPendingRequests = sites.reduce((count, site) => count + (site.pending_request_count || 0), 0);
   const sitesRequiringAttention = siteOperationalSummary.filter((site) => site.issueCount > 0).length;
@@ -588,6 +688,7 @@ function SuperAdmin() {
                 <strong>Client login password</strong>
                 <p>For {credential.email}. It is shown once here; share it with the client through a secure channel.</p>
                 <code>{credential.password}</code>
+                {credential.publicUrl && <p><a href={credential.publicUrl} target="_blank" rel="noreferrer">Open preview link ↗</a></p>}
               </div>
               <button type="button" className="superadmin-secondary" onClick={copyClientPassword}>Copy password</button>
             </section>
@@ -600,6 +701,7 @@ function SuperAdmin() {
                 <article className="superadmin-metric-card"><span className="superadmin-metric-icon green">●</span><div><span>Active sites</span><strong>{activeSiteCount}</strong></div><small>Available to visitors</small></article>
                 <article className="superadmin-metric-card"><span className="superadmin-metric-icon amber">Ⅱ</span><div><span>Paused sites</span><strong>{pausedSiteCount}</strong></div><small>Temporarily unavailable</small></article>
                 <article className="superadmin-metric-card"><span className="superadmin-metric-icon blue">♙</span><div><span>Client accounts</span><strong>{clientCount}</strong></div><small>Enabled client access</small></article>
+                <article className="superadmin-metric-card"><span className="superadmin-metric-icon amber">◷</span><div><span>Prospect trials</span><strong>{trialSiteCount}</strong></div><small>Active or awaiting expiry</small></article>
               </section>
               <section className="superadmin-panel superadmin-sites-panel">
                 <div className="superadmin-panel-heading">
@@ -722,26 +824,24 @@ function SuperAdmin() {
               </div>
               <div className="superadmin-sites-summary" aria-label="Site operations summary">
                 <article>
-                  <span>Needs attention</span>
+                  <span>Attention required</span>
                   <strong>{sitesRequiringAttention}</strong>
-                  <button type="button" onClick={() => openSitesFilter('needs_attention')}>View affected sites</button>
+                  <button type="button" onClick={() => openSitesFilter('needs_attention')}>View issues</button>
                 </article>
                 <article>
-                  <span>Unpublished drafts</span>
-                  <strong>{sitesWithUnpublishedChanges}</strong>
-                  <button type="button" onClick={() => openSitesFilter('draft')}>View draft sites</button>
+                  <span>Active clients</span>
+                  <strong>{categorizedCounts.clients}</strong>
+                  <button type="button" onClick={() => setSiteCategoryTab('clients')}>View clients</button>
                 </article>
                 <article>
-                  <span>Pending requests</span>
+                  <span>Prospect trials</span>
+                  <strong>{categorizedCounts.trials}</strong>
+                  <button type="button" onClick={() => setSiteCategoryTab('trials')}>View trials</button>
+                </article>
+                <article>
+                  <span>Pending edit requests</span>
                   <strong>{totalPendingRequests}</strong>
-                  <button type="button" onClick={() => openSitesFilter('requests')}>View request sites</button>
-                </article>
-                <article>
-                  <span>Hosting health</span>
-                  <strong>Not monitored</strong>
-                  <button type="button" aria-expanded={showHostingInfo} onClick={() => setShowHostingInfo((visible) => !visible)}>
-                    {showHostingInfo ? 'Hide details' : 'What does this mean?'}
-                  </button>
+                  <button type="button" onClick={() => openSitesFilter('requests')}>View requests</button>
                 </article>
               </div>
               {showHostingInfo && (
@@ -751,6 +851,50 @@ function SuperAdmin() {
                   <button type="button" className="superadmin-secondary" onClick={() => openSitesFilter('all')}>View site URLs</button>
                 </div>
               )}
+              <div className="superadmin-category-tabs" role="tablist" aria-label="Site categories">
+                <button
+                  type="button"
+                  role="tab"
+                  className={`superadmin-category-tab ${siteCategoryTab === 'clients' ? 'active' : ''}`}
+                  aria-selected={siteCategoryTab === 'clients'}
+                  onClick={() => setSiteCategoryTab('clients')}
+                >
+                  <span className="superadmin-tab-icon">👥</span>
+                  <span>Active Clients</span>
+                  <span className="superadmin-tab-count">{categorizedCounts.clients}</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={`superadmin-category-tab ${siteCategoryTab === 'trials' ? 'active' : ''}`}
+                  aria-selected={siteCategoryTab === 'trials'}
+                  onClick={() => setSiteCategoryTab('trials')}
+                >
+                  <span className="superadmin-tab-icon">⏳</span>
+                  <span>Prospect Trials</span>
+                  <span className="superadmin-tab-count">{categorizedCounts.trials}</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={`superadmin-category-tab ${siteCategoryTab === 'templates' ? 'active' : ''}`}
+                  aria-selected={siteCategoryTab === 'templates'}
+                  onClick={() => setSiteCategoryTab('templates')}
+                >
+                  <span className="superadmin-tab-icon">🎨</span>
+                  <span>Design Templates</span>
+                  <span className="superadmin-tab-count">{categorizedCounts.templates}</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={`superadmin-category-tab ${siteCategoryTab === 'all' ? 'active' : ''}`}
+                  aria-selected={siteCategoryTab === 'all'}
+                  onClick={() => setSiteCategoryTab('all')}
+                >
+                  <span>All ({sites.length})</span>
+                </button>
+              </div>
               <div className="superadmin-sites-toolbar">
                 <label className="superadmin-sites-search">Search sites
                   <input type="search" value={siteSearch} onChange={(event) => setSiteSearch(event.target.value)} placeholder="Name, site ID, client, or URL" />
@@ -794,6 +938,13 @@ function SuperAdmin() {
                         <div className="superadmin-site-titleline"><h3>{site.name}</h3><span className={`superadmin-status ${site.is_active ? 'active' : ''}`}>{site.is_active ? 'Active' : 'Paused'}</span></div>
                         <code>{site.site_id}</code>
                         <a className="superadmin-site-url" href={site.public_url} target="_blank" rel="noreferrer">{site.public_url || 'No public URL configured'}</a>
+                        {site.is_trial && <div className="superadmin-trial-summary">
+                          <strong>Time-limited trial</strong>
+                          <span>{site.trial_ends_at ? `Ends ${new Date(site.trial_ends_at).toLocaleString()}` : 'Trial expiry not set'}</span>
+                          <span>Last 7 days: {site.usage_last_7_days?.page_views || 0} page views · {site.usage_last_7_days?.unique_visitors || 0} daily unique browsers</span>
+                          {site.usage_last_7_days?.last_visit_at && <span>Last visit {new Date(site.usage_last_7_days.last_visit_at).toLocaleString()}</span>}
+                          {getClientAdminUrl(site) && <a href={getClientAdminUrl(site)} target="_blank" rel="noreferrer">Open client admin ↗</a>}
+                        </div>}
                       </div>
                       <div className="superadmin-client-summary"><small>CLIENT ACCOUNT</small><span>{site.client_email || 'No login assigned'}</span><em className={site.client_user_id && site.client_enabled ? 'enabled' : ''}>{site.client_user_id && site.client_enabled ? 'Access enabled' : site.client_user_id ? 'Access revoked' : 'Not configured'}</em></div>
                     </div>
@@ -816,7 +967,9 @@ function SuperAdmin() {
                       ) : (
                         <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => { setAssignSite(site); setAssignEmail(''); setAssignPassword(''); setAssignPasswordConfirm(''); setError(''); }}>Create client login</button>
                       )}
+                      {site.site_id === 'aljon-contacts' && !site.is_trial && site.is_active && <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => { setTrialStartSite(site); setTrialStartDays('7'); setError(''); }}>Start trial</button>}
                       <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'set_site_active', `${site.is_active ? 'Pause' : 'Activate'} ${site.name}?`)}>{site.is_active ? 'Pause site' : 'Activate site'}</button>
+                      {site.is_trial && <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => runSiteAction(site, 'extend_trial', `Extend ${site.name}'s preview by 7 days?`)}>Extend 7 days</button>}
                       <button type="button" className="superadmin-secondary" disabled={busyAction !== ''} onClick={() => setSitePaymentStatus(site, site.payment_status === 'awaiting_payment' ? 'paid' : site.payment_status === 'paid' ? 'none' : 'awaiting_payment')}>
                         {site.payment_status === 'awaiting_payment' ? 'Mark paid' : site.payment_status === 'paid' ? 'Clear payment' : 'Mark awaiting payment'}
                       </button>
@@ -835,11 +988,15 @@ function SuperAdmin() {
             <form className="superadmin-form superadmin-create-form" onSubmit={handleCreateSite}>
               <label>Site ID<input value={form.site_id} onChange={(event) => setForm({ ...form, site_id: event.target.value })} placeholder="e.g. acme-cards" pattern="[a-z0-9][a-z0-9-]{1,39}" maxLength={40} required /></label>
               <label>Business / site name<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Acme Business" maxLength={120} required /></label>
-              <label>Public website URL<input type="url" value={form.public_url} onChange={(event) => setForm({ ...form, public_url: event.target.value })} placeholder="https://acme.web.app" required /></label>
+              <label className="superadmin-trial-toggle"><input type="checkbox" checked={form.is_trial} onChange={(event) => setForm({ ...form, is_trial: event.target.checked })} /> Create a time-limited prospect preview with the D10 design</label>
+              {form.is_trial ? <>
+                <label>Trial length (days)<input type="number" min="1" max="30" step="1" value={form.trial_days} onChange={(event) => setForm({ ...form, trial_days: event.target.value })} required /></label>
+                <p className="superadmin-form-note">Preview link: https://calling-card-d10.web.app/?site_id={form.site_id || 'your-site-id'}. The new site starts with blank data; enter only details the prospect has authorized you to use. Anyone with the link can view it, so do not add confidential information.</p>
+              </> : <label>Public website URL<input type="url" value={form.public_url} onChange={(event) => setForm({ ...form, public_url: event.target.value })} placeholder="https://acme.web.app" required /></label>}
               <label>Client email<input type="email" value={form.client_email} onChange={(event) => setForm({ ...form, client_email: event.target.value })} placeholder="client@example.com" required /></label>
               <label>Client password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} required /></label>
               <label>Confirm client password<PasswordInput autoComplete="new-password" minLength={12} maxLength={128} value={form.confirm_password} onChange={(event) => setForm({ ...form, confirm_password: event.target.value })} required /></label>
-              <p className="superadmin-form-note">Use a unique email and a password between 12 and 128 characters. The hosting site must be set up and deployed separately.</p>
+              <p className="superadmin-form-note">Use a unique email and a password between 12 and 128 characters. Trial links use the D10 design; no D10 client data is copied.</p>
               <button className="superadmin-primary" type="submit" disabled={busyAction === 'create'}>{busyAction === 'create' ? 'Creating…' : 'Create site and login'}</button>
             </form>
           </section>}
@@ -910,6 +1067,26 @@ function SuperAdmin() {
             <div className="superadmin-site-actions">
               <button className="superadmin-secondary" type="button" disabled={busyAction !== ''} onClick={() => { setEmailSite(null); setClientEmail(''); setReplacementPassword(''); setReplacementPasswordConfirm(''); }}>Cancel</button>
               <button className="superadmin-primary" type="submit" disabled={busyAction !== ''}>{busyAction === `email:${emailSite.site_id}` ? 'Creating…' : 'Create replacement login'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {trialStartSite && (
+        <div className="superadmin-modal-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !busyAction) {
+            setTrialStartSite(null);
+            setError('');
+          }
+        }}>
+          <form className="superadmin-login superadmin-assign-modal superadmin-trial-start-modal" onSubmit={handleStartExistingSiteTrial} aria-labelledby="start-site-trial-title">
+            <p className="superadmin-eyebrow">EXISTING SITE TRIAL</p>
+            <h2 id="start-site-trial-title">Start a trial for {trialStartSite.name}</h2>
+            <p className="superadmin-muted">This keeps the current URL, content, and client login. The site stays public during the trial; when it expires, the public site and client admin access will be blocked until you extend it or mark it paid.</p>
+            {error && <div className="superadmin-alert error" role="alert">{error}</div>}
+            <label>Trial length (days)<input type="number" min="1" max="30" step="1" required value={trialStartDays} onChange={(event) => setTrialStartDays(event.target.value)} /></label>
+            <div className="superadmin-site-actions">
+              <button className="superadmin-secondary" type="button" disabled={busyAction !== ''} onClick={() => { setTrialStartSite(null); setError(''); }}>Cancel</button>
+              <button className="superadmin-primary" type="submit" disabled={busyAction !== ''}>{busyAction === `start_trial:${trialStartSite.site_id}` ? 'Starting…' : 'Start trial'}</button>
             </div>
           </form>
         </div>

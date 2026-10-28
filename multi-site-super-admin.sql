@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS public.managed_sites (
   client_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   client_enabled boolean NOT NULL DEFAULT true,
   is_active boolean NOT NULL DEFAULT true,
+  is_trial boolean NOT NULL DEFAULT false,
+  trial_started_at timestamptz,
+  trial_ends_at timestamptz,
   profile_table text NOT NULL DEFAULT 'site_profiles',
   products_table text NOT NULL DEFAULT 'site_products',
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -17,6 +20,10 @@ CREATE TABLE IF NOT EXISTS public.managed_sites (
 );
 ALTER TABLE public.managed_sites
   ADD COLUMN IF NOT EXISTS client_enabled boolean NOT NULL DEFAULT true;
+ALTER TABLE public.managed_sites
+  ADD COLUMN IF NOT EXISTS is_trial boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS trial_started_at timestamptz,
+  ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz;
 ALTER TABLE public.managed_sites
   ADD COLUMN IF NOT EXISTS payment_status text NOT NULL DEFAULT 'none'
   CHECK (payment_status IN ('none', 'awaiting_payment', 'paid'));
@@ -97,6 +104,10 @@ AS $function$
       AND site_admin.user_id = (SELECT auth.uid())
       AND site.is_active
       AND site.client_enabled
+      AND (
+        NOT site.is_trial
+        OR (site.trial_ends_at IS NOT NULL AND site.trial_ends_at > now())
+      )
   ) OR (
     SELECT public.is_super_admin()
   );
@@ -118,12 +129,38 @@ AS $function$
       site_admin.user_id = (SELECT auth.uid())
       AND site.is_active
       AND site.client_enabled
+      AND (
+        NOT site.is_trial
+        OR (site.trial_ends_at IS NOT NULL AND site.trial_ends_at > now())
+      )
     )
     OR public.is_super_admin()
   ORDER BY site.name;
 $function$;
 REVOKE ALL ON FUNCTION public.get_my_managed_sites() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_my_managed_sites() TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.is_managed_site_public(target_site_id text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+  SELECT coalesce((
+    SELECT site.is_active
+      AND (
+        NOT site.is_trial
+        OR (site.trial_ends_at IS NOT NULL AND site.trial_ends_at > now())
+      )
+    FROM public.managed_sites AS site
+    WHERE site.site_id = target_site_id
+  ), false);
+$function$;
+REVOKE ALL ON FUNCTION public.is_managed_site_public(text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.is_managed_site_public(text)
+  TO anon, authenticated, service_role;
 
 CREATE TABLE IF NOT EXISTS public.site_profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -194,13 +231,15 @@ GRANT ALL ON public.site_admins TO service_role;
 
 DROP POLICY IF EXISTS "Public can view managed site profiles" ON public.site_profiles;
 CREATE POLICY "Public can view managed site profiles"
-  ON public.site_profiles FOR SELECT TO anon, authenticated USING (true);
+  ON public.site_profiles FOR SELECT TO anon, authenticated
+  USING (public.is_managed_site_public(site_id));
 DROP POLICY IF EXISTS "Assigned clients can update their profile" ON public.site_profiles;
 DROP POLICY IF EXISTS "Clients can submit profile changes for approval" ON public.site_profiles;
 
 DROP POLICY IF EXISTS "Public can view managed site products" ON public.site_products;
 CREATE POLICY "Public can view managed site products"
-  ON public.site_products FOR SELECT TO anon, authenticated USING (true);
+  ON public.site_products FOR SELECT TO anon, authenticated
+  USING (public.is_managed_site_public(site_id));
 DROP POLICY IF EXISTS "Assigned clients can insert site products" ON public.site_products;
 DROP POLICY IF EXISTS "Assigned clients can update site products" ON public.site_products;
 DROP POLICY IF EXISTS "Assigned clients can delete site products" ON public.site_products;
@@ -293,11 +332,11 @@ BEGIN
   EXECUTE format('GRANT SELECT ON public.%I TO anon, authenticated', profile_table);
   EXECUTE format('GRANT SELECT ON public.%I TO anon, authenticated', products_table);
   EXECUTE format(
-    'CREATE POLICY tenant_public_read ON public.%I FOR SELECT TO anon, authenticated USING (true)',
+    'CREATE POLICY tenant_public_read ON public.%I FOR SELECT TO anon, authenticated USING (public.is_managed_site_public(site_id))',
     profile_table
   );
   EXECUTE format(
-    'CREATE POLICY tenant_public_read ON public.%I FOR SELECT TO anon, authenticated USING (true)',
+    'CREATE POLICY tenant_public_read ON public.%I FOR SELECT TO anon, authenticated USING (public.is_managed_site_public(site_id))',
     products_table
   );
   EXECUTE format(

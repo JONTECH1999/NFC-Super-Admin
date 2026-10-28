@@ -277,7 +277,7 @@ function ProjectDetailModal({ project, profile, onClose, onOpenLightbox }) {
             </a>
             <a
               className="project-modal-shop-btn"
-              href="/shop"
+              href={`/shop${window.location.search}`}
             >
               <i className="fa-solid fa-store" aria-hidden="true" />
               <span>Visit Shop</span>
@@ -530,7 +530,7 @@ function ProductShop({ profile, products: initialProducts }) {
       {!selectedProduct && (
         <>
           <header className="layout-gallery-header">
-            <a className="layout-gallery-back" href="/">
+            <a className="layout-gallery-back" href={`/${window.location.search}`}>
               <i className="fa-solid fa-arrow-left" aria-hidden="true" />
               <span>Back to business card</span>
             </a>
@@ -905,11 +905,44 @@ function getInitialProducts() {
   return fallbackProducts;
 }
 
+async function recordTrialPageView(tenantSiteId) {
+  const today = new Date().toISOString().slice(0, 10);
+  const visitorKey = `nfc_trial_visitor_${tenantSiteId}`;
+  const [storedDate, storedVisitorId] = (localStorage.getItem(visitorKey) || "").split(":", 2);
+  const dailyVisitorId = storedDate === today && storedVisitorId
+    ? storedVisitorId
+    : crypto.randomUUID();
+  if (storedDate !== today || !storedVisitorId) {
+    localStorage.setItem(visitorKey, `${today}:${dailyVisitorId}`);
+  }
+  const digestBuffer = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(dailyVisitorId),
+  );
+  const visitorDigest = Array.from(new Uint8Array(digestBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  const { error } = await supabase.rpc("record_public_site_view", {
+    target_site_id: tenantSiteId,
+    target_visitor_digest: visitorDigest,
+  });
+  if (error) throw error;
+}
+
 function App() {
   /* ── Supabase data ── */
+  const hasRequestedSiteId = new URLSearchParams(window.location.search).has("site_id");
+  const shouldCheckTrialAccess = hasRequestedSiteId || siteId !== "main";
   const [profile, setProfile] = useState(getInitialProfile);
   const [allProducts, setAllProducts] = useState(getInitialProducts);
   const [dataReady, setDataReady] = useState(false);
+  const [trialAccess, setTrialAccess] = useState(() => (
+    shouldCheckTrialAccess
+      ? null
+      : { checked: true, isTrial: false, isAvailable: true }
+  ));
+  const [showAnalyticsNotice, setShowAnalyticsNotice] = useState(false);
+  const [analyticsNoticeError, setAnalyticsNoticeError] = useState("");
 
   /* Featured products for the main card, all products for the shop */
   const featuredProducts = allProducts.filter((p) => p.is_featured !== false);
@@ -919,6 +952,45 @@ function App() {
 
     async function loadData() {
       try {
+        if (shouldCheckTrialAccess) {
+          const { data: access, error: accessError } = await supabase.rpc(
+            "get_public_site_trial_status",
+            { target_site_id: siteId },
+          );
+          if (cancelled) return;
+          if (accessError) {
+            console.error("Could not verify site availability:", accessError);
+            setTrialAccess({ checked: true, checkFailed: true });
+            return;
+          }
+          if (typeof access?.is_trial !== "boolean" || typeof access?.is_available !== "boolean") {
+            console.error("Could not verify site availability: the status response was invalid.");
+            setTrialAccess({ checked: true, checkFailed: true });
+            return;
+          }
+          setTrialAccess({
+            checked: true,
+            isTrial: access.is_trial,
+            isAvailable: access.is_available || (!hasRequestedSiteId && !access.is_trial),
+            trialEndsAt: access?.trial_ends_at || null,
+          });
+          if (access.is_available === false && (hasRequestedSiteId || access.is_trial)) return;
+
+          if (access?.is_trial) {
+            try {
+              const consentKey = `nfc_trial_analytics_consent_${siteId}`;
+              const consent = localStorage.getItem(consentKey);
+              if (consent === "yes") {
+                await recordTrialPageView(siteId);
+              } else if (consent !== "no") {
+                setShowAnalyticsNotice(true);
+              }
+            } catch (analyticsError) {
+              console.warn("Could not check or record anonymous trial usage:", analyticsError);
+            }
+          }
+        }
+
         const [profileRes, productsRes] = await Promise.all([
           supabase.from(profilesTable).select("*").eq("site_id", siteId).single(),
           supabase.from(productsTable).select("*").eq("site_id", siteId).order("sort_order"),
@@ -982,6 +1054,19 @@ function App() {
   }, [profile.site_title, profile.site_icon_url]);
 
   const actions = buildActions(profile);
+
+  const chooseTrialAnalytics = async (allow) => {
+    try {
+      localStorage.setItem(`nfc_trial_analytics_consent_${siteId}`, allow ? "yes" : "no");
+      if (allow) await recordTrialPageView(siteId);
+      setShowAnalyticsNotice(false);
+      setAnalyticsNoticeError("");
+    } catch (consentError) {
+      console.error("Could not save trial analytics preference:", consentError);
+      setShowAnalyticsNotice(true);
+      setAnalyticsNoticeError("Your choice or usage count could not be saved. Retry, or choose No thanks.");
+    }
+  };
 
   const [introPhase, setIntroPhase] = useState("loading");
   const [profileImageLoadedUrl, setProfileImageLoadedUrl] = useState("");
@@ -1559,12 +1644,75 @@ function App() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [qrOpen, installHelpOpen, activePayment]);
 
+  if (shouldCheckTrialAccess && !trialAccess?.checked) {
+    return (
+      <main className="trial-access-page" role="status" aria-live="polite">
+        <section className="trial-access-card">
+          <p>PRIVATE PREVIEW</p>
+          <h1>Checking preview access…</h1>
+        </section>
+      </main>
+    );
+  }
+
+  if (shouldCheckTrialAccess && trialAccess?.checkFailed) {
+    return (
+      <main className="trial-access-page" role="alert">
+        <section className="trial-access-card">
+          <p>{hasRequestedSiteId ? "PRIVATE PREVIEW" : "SITE STATUS"}</p>
+          <h1>{hasRequestedSiteId ? "Preview temporarily unavailable" : "Site temporarily unavailable"}</h1>
+          <p>We couldn’t verify access right now. Please try again in a moment.</p>
+          <a href="https://calling-card.web.app/">Contact us</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (shouldCheckTrialAccess && trialAccess?.isAvailable === false && trialAccess.isTrial) {
+    return (
+      <main className="trial-access-page">
+        <section className="trial-access-card">
+          <p>{hasRequestedSiteId ? "PRIVATE PREVIEW" : "TIME-LIMITED SITE"}</p>
+          <h1>This trial has ended</h1>
+          <p>Contact us if you would like to continue this site or create your own digital business card.</p>
+          <a href="https://calling-card.web.app/" target="_blank" rel="noreferrer">Contact us</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (hasRequestedSiteId && trialAccess?.isAvailable === false) {
+    return (
+      <main className="trial-access-page">
+        <section className="trial-access-card">
+          <p>WEBSITE UNAVAILABLE</p>
+          <h1>This site is temporarily unavailable</h1>
+          <p>Please contact us if you need more information.</p>
+          <a href="https://calling-card.web.app/" target="_blank" rel="noreferrer">Contact us</a>
+        </section>
+      </main>
+    );
+  }
+
   if (window.location.pathname.replace(/\/+$/, "") === "/shop") {
     return <ProductShop profile={profile} products={allProducts} />;
   }
 
   return (
     <>
+      {showAnalyticsNotice && trialAccess?.isTrial && (
+        <aside className="trial-analytics-notice" aria-label="Anonymous usage measurement">
+          <div>
+            <strong>Help us measure this preview?</strong>
+            <p>Allow anonymous counts of page views and daily unique browsers using a random browser token. Our trial analytics store no names, contact details, IP addresses, or location.</p>
+            {analyticsNoticeError && <small role="alert">{analyticsNoticeError}</small>}
+          </div>
+          <div className="trial-analytics-actions">
+            <button type="button" onClick={() => chooseTrialAnalytics(false)}>No thanks</button>
+            <button type="button" onClick={() => chooseTrialAnalytics(true)}>Allow analytics</button>
+          </div>
+        </aside>
+      )}
       {introPhase !== "done" && (
         <div
           className={`intro-screen${introPhase === "exiting" ? " is-exiting" : ""}`}
@@ -1728,7 +1876,7 @@ function App() {
               </button>
               <a
                 className="contact-button"
-                href="/shop"
+                href={`/shop${window.location.search}`}
                 aria-label="Visit the shop"
               >
                 <span>Visit Shop</span>

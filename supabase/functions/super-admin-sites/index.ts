@@ -865,7 +865,7 @@ Deno.serve(async (request) => {
     if (body.action === "list_sites") {
       const { data: sites, error } = await serviceClient
         .from("managed_sites")
-        .select("site_id, name, public_url, client_email, client_user_id, client_enabled, is_active, payment_status, profile_table, products_table, created_at")
+        .select("site_id, name, public_url, client_email, client_user_id, client_enabled, is_active, payment_status, profile_table, products_table, created_at, is_trial, trial_started_at, trial_ends_at")
         .order("created_at", { ascending: false });
       if (error) throw error;
       const managedSites = sites || [];
@@ -875,7 +875,9 @@ Deno.serve(async (request) => {
           throw new Error("A managed site has invalid profile table configuration.");
         }
       }
-      const [profileResults, draftsResult, requestsResult] = await Promise.all([
+      const usageStart = new Date();
+      usageStart.setUTCDate(usageStart.getUTCDate() - 6);
+      const [profileResults, draftsResult, requestsResult, usageResult] = await Promise.all([
         Promise.all(profileTableNames.map(async (tableName) => {
           const { data, error: profileError } = await serviceClient.from(tableName)
             .select("site_id, name, business, phone, email, address, profile_image_url")
@@ -887,9 +889,15 @@ Deno.serve(async (request) => {
           .select("site_id, updated_at, published_at")
           .limit(5000),
         serviceClient.rpc("get_pending_site_request_summary"),
+        serviceClient.from("site_trial_daily_usage")
+          .select("site_id, visit_date, page_views, unique_visitors, last_visit_at")
+          .gte("visit_date", usageStart.toISOString().slice(0, 10))
+          .order("visit_date", { ascending: false })
+          .limit(5000),
       ]);
       if (draftsResult.error) throw draftsResult.error;
       if (requestsResult.error) throw requestsResult.error;
+      if (usageResult.error) throw usageResult.error;
 
       const profilesBySite = new Map([
         ...profileResults.flat(),
@@ -899,10 +907,26 @@ Deno.serve(async (request) => {
         request.site_id,
         { count: Number(request.pending_request_count), oldest_at: request.oldest_pending_request_at },
       ]));
+      const usageBySite = new Map();
+      for (const usage of usageResult.data || []) {
+        const totals = usageBySite.get(usage.site_id) || {
+          page_views: 0,
+          unique_visitors: 0,
+          last_visit_at: null,
+        };
+        totals.page_views += Number(usage.page_views || 0);
+        totals.unique_visitors += Number(usage.unique_visitors || 0);
+        if (!totals.last_visit_at || usage.last_visit_at > totals.last_visit_at) {
+          totals.last_visit_at = usage.last_visit_at;
+        }
+        usageBySite.set(usage.site_id, totals);
+      }
 
       const enrichedSites = (sites || []).map((site) => {
         const profile = profilesBySite.get(site.site_id);
         const draft = draftsBySite.get(site.site_id);
+        const trialExpired = site.is_trial
+          && (!site.trial_ends_at || new Date(site.trial_ends_at) <= new Date());
         const pendingRequests = requestsBySite.get(site.site_id) || { count: 0, oldest_at: null };
         const missingConfiguration = [];
         if (!site.public_url?.trim()) missingConfiguration.push("Public URL");
@@ -924,11 +948,18 @@ Deno.serve(async (request) => {
         );
         return {
           ...site,
+          is_active: site.is_active && !trialExpired,
+          trial_expired: trialExpired,
           has_unpublished_draft: hasUnpublishedDraft,
           draft_updated_at: draft?.updated_at || null,
           published_at: draft?.published_at || null,
           pending_request_count: pendingRequests.count,
           oldest_pending_request_at: pendingRequests.oldest_at,
+          usage_last_7_days: usageBySite.get(site.site_id) || {
+            page_views: 0,
+            unique_visitors: 0,
+            last_visit_at: null,
+          },
           missing_configuration: missingConfiguration,
           hosting_health: "not_monitored",
         };
@@ -1105,13 +1136,20 @@ Deno.serve(async (request) => {
     if (body.action === "create_site") {
       const siteId = String(body.site_id || "").trim().toLowerCase();
       const name = String(body.name || "").trim();
-      const publicUrl = String(body.public_url || "").trim();
+      const isTrial = body.is_trial === true;
+      const trialDays = Number(body.trial_days);
+      const publicUrl = isTrial
+        ? `https://calling-card-d10.web.app/?site_id=${encodeURIComponent(siteId)}`
+        : String(body.public_url || "").trim();
       const email = String(body.client_email || "").trim().toLowerCase();
       const password = body.password;
       if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(siteId) || siteId === "main") {
         return invalid("Use a site ID with 2–40 lowercase letters, numbers, or hyphens. The main site ID is reserved.", origin);
       }
       if (!name || name.length > 120) return invalid("Enter a site name up to 120 characters.", origin);
+      if (isTrial && (!Number.isInteger(trialDays) || trialDays < 1 || trialDays > 30)) {
+        return invalid("Choose a trial length between 1 and 30 days.", origin);
+      }
       let parsedUrl: URL;
       try {
         parsedUrl = new URL(publicUrl);
@@ -1161,7 +1199,50 @@ Deno.serve(async (request) => {
         }, 400, origin);
       }
 
-      await recordActivity(siteId, "site_created", `Created ${name} and assigned client access to ${email}.`);
+      let trialStartedAt: string | null = null;
+      let trialEndsAt: string | null = null;
+      if (isTrial) {
+        const startedAt = new Date();
+        const endsAt = new Date(startedAt.getTime() + trialDays * 24 * 60 * 60 * 1000);
+        const { data: updatedSite, error: trialError } = await serviceClient
+          .from("managed_sites")
+          .update({
+            is_trial: true,
+            trial_started_at: startedAt.toISOString(),
+            trial_ends_at: endsAt.toISOString(),
+          })
+          .eq("site_id", siteId)
+          .select("site_id")
+          .maybeSingle();
+        if (trialError || !updatedSite) {
+          const { error: siteCleanupError } = await serviceClient
+            .from("managed_sites")
+            .delete()
+            .eq("site_id", siteId);
+          const userCleanupSucceeded = await deleteCreatedUser(
+            (id) => serviceClient.auth.admin.deleteUser(id),
+            userId,
+          );
+          if (siteCleanupError || !userCleanupSucceeded) {
+            console.error("Could not fully roll back prospect trial creation:", siteCleanupError?.message || "Client user cleanup failed.");
+            return jsonResponse({
+              error: "Trial setup failed and cleanup was incomplete. Contact the system administrator before creating this site again.",
+            }, 500, origin);
+          }
+          if (trialError) throw trialError;
+          return invalid("Trial setup failed because the new site could not be updated.", origin);
+        }
+        trialStartedAt = startedAt.toISOString();
+        trialEndsAt = endsAt.toISOString();
+      }
+
+      await recordActivity(
+        siteId,
+        isTrial ? "prospect_trial_created" : "site_created",
+        isTrial
+          ? `Created a ${trialDays}-day prospect preview for ${name}; assigned client access to ${email}.`
+          : `Created ${name} and assigned client access to ${email}.`,
+      );
       const tableSuffix = siteId.replace(/^calling-card-/, "").replace(/-/g, "_");
       return jsonResponse({
         site: {
@@ -1172,6 +1253,9 @@ Deno.serve(async (request) => {
           client_user_id: userId,
           client_enabled: true,
           is_active: true,
+          is_trial: isTrial,
+          trial_started_at: trialStartedAt,
+          trial_ends_at: trialEndsAt,
           profile_table: `calling_card_${tableSuffix}_profiles`,
           products_table: `calling_card_${tableSuffix}_products`,
         },
@@ -1235,6 +1319,18 @@ Deno.serve(async (request) => {
       const siteId = String(body.site_id || "").trim();
       const active = body.is_active;
       if (!siteId || typeof active !== "boolean") return invalid("A site ID and active status are required.", origin);
+      if (active) {
+        const { data: site, error: siteError } = await serviceClient
+          .from("managed_sites")
+          .select("is_trial, trial_ends_at")
+          .eq("site_id", siteId)
+          .maybeSingle();
+        if (siteError) throw siteError;
+        if (!site) return jsonResponse({ error: "Site not found." }, 404, origin);
+        if (site.is_trial && (!site.trial_ends_at || new Date(site.trial_ends_at) <= new Date())) {
+          return invalid("This trial has expired. Extend the trial before activating the site.", origin);
+        }
+      }
       const { data: updatedSite, error } = await serviceClient
         .from("managed_sites")
         .update({ is_active: active, updated_at: new Date().toISOString() })
@@ -1247,15 +1343,100 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: true }, 200, origin);
     }
 
+    if (body.action === "start_trial") {
+      const siteId = String(body.site_id || "").trim();
+      const trialDays = Number(body.trial_days);
+      if (!siteId || !Number.isInteger(trialDays) || trialDays < 1 || trialDays > 30) {
+        return invalid("Choose a trial length between 1 and 30 days.", origin);
+      }
+      const { data: site, error: siteError } = await serviceClient
+        .from("managed_sites")
+        .select("name, is_trial, is_active")
+        .eq("site_id", siteId)
+        .maybeSingle();
+      if (siteError) throw siteError;
+      if (!site) return jsonResponse({ error: "Site not found." }, 404, origin);
+      if (site.is_trial) return invalid("This site is already on a trial.", origin);
+      if (!site.is_active) return invalid("Activate this site before starting a trial.", origin);
+
+      const startedAt = new Date();
+      const endsAt = new Date(startedAt.getTime() + trialDays * 24 * 60 * 60 * 1000);
+      const { data: updatedSite, error: updateError } = await serviceClient
+        .from("managed_sites")
+        .update({
+          is_trial: true,
+          trial_started_at: startedAt.toISOString(),
+          trial_ends_at: endsAt.toISOString(),
+          updated_at: startedAt.toISOString(),
+        })
+        .eq("site_id", siteId)
+        .eq("is_trial", false)
+        .eq("is_active", true)
+        .select("site_id")
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!updatedSite) return invalid("The site changed before the trial could start. Refresh and try again.", origin);
+      await recordActivity(siteId, "prospect_trial_created", `Started a ${trialDays}-day trial for existing site ${site.name}.`);
+      return jsonResponse({ ok: true, trial_started_at: startedAt.toISOString(), trial_ends_at: endsAt.toISOString() }, 200, origin);
+    }
+
+    if (body.action === "extend_trial") {
+      const siteId = String(body.site_id || "").trim();
+      const trialDays = Number(body.trial_days);
+      if (!siteId || !Number.isInteger(trialDays) || trialDays < 1 || trialDays > 30) {
+        return invalid("Choose a trial extension between 1 and 30 days.", origin);
+      }
+      const { data: site, error } = await serviceClient
+        .from("managed_sites")
+        .select("name, is_trial, trial_ends_at")
+        .eq("site_id", siteId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!site) return jsonResponse({ error: "Site not found." }, 404, origin);
+      if (!site.is_trial) return invalid("This site is no longer a trial.", origin);
+      const baseTime = site.trial_ends_at && new Date(site.trial_ends_at) > new Date()
+        ? new Date(site.trial_ends_at)
+        : new Date();
+      const nextEnd = new Date(baseTime.getTime() + trialDays * 24 * 60 * 60 * 1000);
+      const { error: updateError } = await serviceClient
+        .from("managed_sites")
+        .update({
+          trial_ends_at: nextEnd.toISOString(),
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("site_id", siteId);
+      if (updateError) throw updateError;
+      await recordActivity(siteId, "prospect_trial_extended", `Extended ${site.name}'s preview by ${trialDays} days.`);
+      return jsonResponse({ ok: true, trial_ends_at: nextEnd.toISOString() }, 200, origin);
+    }
+
     if (body.action === "set_payment_status") {
       const siteId = String(body.site_id || "").trim();
       const paymentStatus = body.payment_status;
       if (!siteId || !["none", "awaiting_payment", "paid"].includes(String(paymentStatus))) {
         return invalid("A site ID and valid payment status are required.", origin);
       }
+      const { data: currentSite, error: currentSiteError } = await serviceClient
+        .from("managed_sites")
+        .select("name, is_trial")
+        .eq("site_id", siteId)
+        .maybeSingle();
+      if (currentSiteError) throw currentSiteError;
+      if (!currentSite) return jsonResponse({ error: "Site not found." }, 404, origin);
+      const siteChanges = paymentStatus === "paid" && currentSite.is_trial
+        ? {
+          payment_status: paymentStatus,
+          is_trial: false,
+          trial_started_at: null,
+          trial_ends_at: null,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        }
+        : { payment_status: paymentStatus, updated_at: new Date().toISOString() };
       const { data: site, error } = await serviceClient
         .from("managed_sites")
-        .update({ payment_status: paymentStatus, updated_at: new Date().toISOString() })
+        .update(siteChanges)
         .eq("site_id", siteId)
         .select("name")
         .maybeSingle();
