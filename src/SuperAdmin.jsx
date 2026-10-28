@@ -859,7 +859,6 @@ function SuperAdmin() {
                   aria-selected={siteCategoryTab === 'clients'}
                   onClick={() => setSiteCategoryTab('clients')}
                 >
-                  <span className="superadmin-tab-icon">👥</span>
                   <span>Active Clients</span>
                   <span className="superadmin-tab-count">{categorizedCounts.clients}</span>
                 </button>
@@ -870,7 +869,6 @@ function SuperAdmin() {
                   aria-selected={siteCategoryTab === 'trials'}
                   onClick={() => setSiteCategoryTab('trials')}
                 >
-                  <span className="superadmin-tab-icon">⏳</span>
                   <span>Prospect Trials</span>
                   <span className="superadmin-tab-count">{categorizedCounts.trials}</span>
                 </button>
@@ -881,7 +879,6 @@ function SuperAdmin() {
                   aria-selected={siteCategoryTab === 'templates'}
                   onClick={() => setSiteCategoryTab('templates')}
                 >
-                  <span className="superadmin-tab-icon">🎨</span>
                   <span>Design Templates</span>
                   <span className="superadmin-tab-count">{categorizedCounts.templates}</span>
                 </button>
@@ -938,13 +935,45 @@ function SuperAdmin() {
                         <div className="superadmin-site-titleline"><h3>{site.name}</h3><span className={`superadmin-status ${site.is_active ? 'active' : ''}`}>{site.is_active ? 'Active' : 'Paused'}</span></div>
                         <code>{site.site_id}</code>
                         <a className="superadmin-site-url" href={site.public_url} target="_blank" rel="noreferrer">{site.public_url || 'No public URL configured'}</a>
-                        {site.is_trial && <div className="superadmin-trial-summary">
-                          <strong>Time-limited trial</strong>
-                          <span>{site.trial_ends_at ? `Ends ${new Date(site.trial_ends_at).toLocaleString()}` : 'Trial expiry not set'}</span>
-                          <span>Last 7 days: {site.usage_last_7_days?.page_views || 0} page views · {site.usage_last_7_days?.unique_visitors || 0} daily unique browsers</span>
-                          {site.usage_last_7_days?.last_visit_at && <span>Last visit {new Date(site.usage_last_7_days.last_visit_at).toLocaleString()}</span>}
-                          {getClientAdminUrl(site) && <a href={getClientAdminUrl(site)} target="_blank" rel="noreferrer">Open client admin ↗</a>}
-                        </div>}
+                        {site.is_trial && (
+                          <div className="superadmin-trial-kpi-card">
+                            <div className="superadmin-trial-kpi-header">
+                              <span className="superadmin-trial-kpi-badge">
+                                {site.trial_expired ? 'TRIAL EXPIRED' : 'ACTIVE TRIAL'}
+                              </span>
+                              <span className="superadmin-trial-kpi-expiry">
+                                {site.trial_ends_at
+                                  ? `Expires ${new Date(site.trial_ends_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} at ${new Date(site.trial_ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                                  : 'No expiration date'}
+                              </span>
+                            </div>
+                            <div className="superadmin-trial-kpi-grid">
+                              <div className="superadmin-trial-kpi-item">
+                                <span className="superadmin-trial-kpi-val">{site.usage_last_7_days?.page_views || 0}</span>
+                                <span className="superadmin-trial-kpi-lbl">TOTAL VIEWS</span>
+                              </div>
+                              <div className="superadmin-trial-kpi-item">
+                                <span className="superadmin-trial-kpi-val">{site.usage_last_7_days?.unique_visitors || 0}</span>
+                                <span className="superadmin-trial-kpi-lbl">UNIQUE BROWSERS</span>
+                              </div>
+                              <div className="superadmin-trial-kpi-item">
+                                <span className="superadmin-trial-kpi-val">
+                                  {site.usage_last_7_days?.last_visit_at
+                                    ? new Date(site.usage_last_7_days.last_visit_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                    : 'None'}
+                                </span>
+                                <span className="superadmin-trial-kpi-lbl">LAST ACTIVITY</span>
+                              </div>
+                            </div>
+                            {getClientAdminUrl(site) && (
+                              <div className="superadmin-trial-kpi-footer">
+                                <a href={getClientAdminUrl(site)} target="_blank" rel="noreferrer" className="superadmin-trial-admin-link">
+                                  Access client portal &rarr;
+                                </a>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="superadmin-client-summary"><small>CLIENT ACCOUNT</small><span>{site.client_email || 'No login assigned'}</span><em className={site.client_user_id && site.client_enabled ? 'enabled' : ''}>{site.client_user_id && site.client_enabled ? 'Access enabled' : site.client_user_id ? 'Access revoked' : 'Not configured'}</em></div>
                     </div>
