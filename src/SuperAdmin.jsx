@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
 import PasswordInput from './PasswordInput';
 import SuperAdminSiteEditor from './SuperAdminSiteEditor';
+import DigiFloatingChat from './DigiFloatingChat';
 import './superadmin.css';
 
 const dashboardPages = {
@@ -1122,6 +1123,7 @@ function SuperAdmin() {
           </form>
         </div>
       )}
+      <DigiFloatingChat invoke={invoke} />
       <footer className="superadmin-footer">Client passwords are set by the administrator and never stored in this dashboard.</footer>
     </main>
   );

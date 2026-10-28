@@ -1626,6 +1626,104 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: true }, 200, origin);
     }
 
+    
+    if (body.action === "digi_chat") {
+      const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
+      if (!anthropicApiKey) {
+        return jsonResponse({ error: "Anthropic API key is not configured in Supabase Secrets." }, 500, origin);
+      }
+
+      const prompt = String(body.prompt || "").trim();
+      const chatHistory = Array.isArray(body.history) ? body.history : [];
+      if (!prompt) return invalid("Message prompt is required.", origin);
+
+      // Fetch fresh system snapshot for DIGI
+      const { data: allSites } = await serviceClient
+        .from("managed_sites")
+        .select("site_id, name, is_active, is_trial, trial_started_at, trial_ends_at, payment_status, client_email");
+
+      const usageStart = new Date();
+      usageStart.setUTCDate(usageStart.getUTCDate() - 6);
+      const { data: usageData } = await serviceClient
+        .from("site_trial_daily_usage")
+        .select("site_id, page_views, unique_visitors")
+        .gte("visit_date", usageStart.toISOString().slice(0, 10));
+
+      const { data: pendingRequests } = await serviceClient
+        .from("site_edit_requests")
+        .select("id, site_id, client_email, request_type, status, created_at")
+        .eq("status", "pending");
+
+      const activeSites = (allSites || []).filter((s: { is_active: boolean; site_id: string; is_trial: boolean }) => s.is_active && !/^calling-card-d(?:[1-9]|10)$/i.test(s.site_id) && !s.is_trial);
+      const pausedSites = (allSites || []).filter((s: { is_active: boolean }) => !s.is_active);
+      const trialSites = (allSites || []).filter((s: { is_trial: boolean }) => s.is_trial);
+
+      const systemContext = {
+        total_registered_sites: allSites?.length || 0,
+        active_client_sites: activeSites.map((s: { site_id: string; name: string; payment_status: string }) => ({ site_id: s.site_id, name: s.name, payment: s.payment_status })),
+        paused_sites: pausedSites.map((s: { site_id: string; name: string }) => ({ site_id: s.site_id, name: s.name })),
+        prospect_trials: trialSites.map((s: { site_id: string; name: string; trial_ends_at: string | null }) => ({
+          site_id: s.site_id,
+          name: s.name,
+          trial_ends_at: s.trial_ends_at,
+          expired: s.trial_ends_at ? new Date(s.trial_ends_at) <= new Date() : false
+        })),
+        pending_edit_requests: (pendingRequests || []).map((r: { site_id: string; client_email: string; request_type: string; created_at: string }) => ({
+          site_id: r.site_id,
+          client: r.client_email,
+          type: r.request_type,
+          created_at: r.created_at
+        })),
+        recent_trial_views_summary: (usageData || []).reduce((acc: { views: number; visitors: number }, u: { page_views: number; unique_visitors: number }) => {
+          acc.views = (acc.views || 0) + Number(u.page_views || 0);
+          acc.visitors = (acc.visitors || 0) + Number(u.unique_visitors || 0);
+          return acc;
+        }, { views: 0, visitors: 0 })
+      };
+
+      const systemPrompt = `You are DIGI, the dedicated, friendly, and intelligent AI Assistant for Digiworld (handling Digipen NFC, Digi Card NFC, and digital calling cards).
+You live inside the Super Admin control center.
+You have live, real-time access to the platform's state:
+${JSON.stringify(systemContext, null, 2)}
+
+Your roles:
+1. System Monitoring: Answer questions accurately about active clients, paused sites, prospect trials, traffic analytics, and pending edit requests.
+2. Data Intake Assistant: If the user pastes raw client text (from Facebook, Instagram, bio, WhatsApp), parse and organize the details cleanly for them.
+3. Tone: Professional, concise, sharp, and helpful. Use clean Markdown formatting with bullet points. Avoid childish emoji spam; keep it executive and sleek.
+4. If asked to do something outside your read-only knowledge (like physically deleting a database), remind them they can execute that directly from the Super Admin buttons.`;
+
+      const messages = [
+        ...chatHistory.slice(-8).map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
+        { role: "user", content: prompt }
+      ];
+
+      const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": anthropicApiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "claude-3-5-sonnet-20241022",
+          max_tokens: 1024,
+          system: systemPrompt,
+          messages
+        })
+      });
+
+      if (!claudeResponse.ok) {
+        const errText = await claudeResponse.text();
+        console.error("Anthropic API error:", errText);
+        return jsonResponse({ error: "Anthropic API request failed: " + errText }, 502, origin);
+      }
+
+      const claudeData = await claudeResponse.json();
+      const reply = claudeData.content?.[0]?.text || "I was unable to process that request.";
+
+      return jsonResponse({ reply }, 200, origin);
+    }
+
     if (body.action === "set_edit_request_status") {
       const requestId = String(body.request_id || "").trim();
       const status = body.status;
