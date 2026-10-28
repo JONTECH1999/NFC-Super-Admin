@@ -4068,3 +4068,143 @@
   text-decoration: underline;
   opacity: 0.85;
 }
+
+
+/* DIGI AI Assistant Styles */
+.superadmin-digi-trigger-btn {
+  background: linear-gradient(135deg, #a67c52, #7f5539) !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  box-shadow: 0 4px 12px rgba(127, 85, 57, 0.25) !important;
+}
+
+.superadmin-digi-trigger-btn:hover {
+  background: linear-gradient(135deg, #b08968, #8c5d3d) !important;
+  transform: translateY(-1px);
+}
+
+.superadmin-digi-modal {
+  max-width: 650px;
+  width: 95%;
+  max-height: 90vh;
+  overflow-y: auto;
+  border: 1px solid var(--theme-line);
+  background: var(--theme-surface-raised);
+}
+
+.superadmin-digi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--theme-line);
+}
+
+.superadmin-digi-header h2 {
+  margin: 4px 0;
+  font-size: 1.15rem;
+}
+
+.superadmin-digi-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 14px 0;
+}
+
+.superadmin-digi-input-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--theme-text);
+}
+
+.superadmin-digi-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-line);
+  border-radius: 8px;
+  background: var(--theme-field);
+  color: var(--theme-text);
+  font: inherit;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+.superadmin-digi-textarea:focus {
+  outline: none;
+  border-color: var(--theme-accent);
+}
+
+.superadmin-digi-preview {
+  padding: 12px 14px;
+  background: rgba(139, 90, 54, 0.05);
+  border: 1px dashed var(--theme-line);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.superadmin-digi-preview h4 {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--theme-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.superadmin-digi-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.superadmin-digi-preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background: var(--theme-surface);
+  border: 1px solid var(--theme-line);
+  border-radius: 6px;
+}
+
+.superadmin-digi-preview-item small {
+  font-size: 0.62rem;
+  color: var(--theme-muted);
+  font-weight: 700;
+}
+
+.superadmin-digi-preview-item strong {
+  font-size: 0.76rem;
+  color: var(--theme-text);
+  word-break: break-word;
+}
+
+.superadmin-digi-preview-links ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 0.74rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.superadmin-digi-preview-links code {
+  color: var(--theme-accent);
+  font-size: 0.72rem;
+}
+
+.superadmin-digi-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--theme-line);
+}

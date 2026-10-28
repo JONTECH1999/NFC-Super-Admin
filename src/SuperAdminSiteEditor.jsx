@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
+import { parseClientRawData } from './lib/digiAssistant';
 
 const profileGroups = [
   {
@@ -415,6 +416,11 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  /* ── DIGI AI Assistant State ── */
+  const [digiOpen, setDigiOpen] = useState(false);
+  const [digiRawInput, setDigiRawInput] = useState('');
+  const [digiParsedPreview, setDigiParsedPreview] = useState(null);
+
   const loadEditor = useCallback(async () => {
     setLoading(true);
     setDirty(false);
@@ -503,6 +509,37 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
       : { ...current, [key]: value });
     setDirty(true);
     setNotice('');
+  };
+
+  /* ── Apply DIGI AI Extracted Information ── */
+  const handleDigiApply = () => {
+    if (!digiParsedPreview) return;
+    const { detected, links } = digiParsedPreview;
+    
+    setProfile((current) => {
+      const next = { ...current };
+      Object.entries(detected).forEach(([field, val]) => {
+        if (val) {
+          next[field] = val;
+          if (field === 'phone') next.phone_link = val;
+        }
+      });
+      return next;
+    });
+
+    if (links && links.length > 0) {
+      setCustomLinks((current) => {
+        const existingUrls = new Set(current.map((l) => l.url?.trim().toLowerCase()));
+        const newUniqueLinks = links.filter((l) => !existingUrls.has(l.url?.trim().toLowerCase()));
+        return [...current, ...newUniqueLinks];
+      });
+    }
+
+    setDirty(true);
+    setNotice('DIGI AI filled the detected business fields and links into the form below. Review and click "Save draft" when ready.');
+    setDigiOpen(false);
+    setDigiRawInput('');
+    setDigiParsedPreview(null);
   };
 
   const updateProduct = (index, key, value) => {
@@ -813,6 +850,13 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
           <p className="superadmin-section-note">Save privately while you prepare. Review the before-and-after summary before confirming any live update.</p>
         </div>
         <div className="superadmin-editor-heading-actions">
+          <button
+            className="superadmin-primary superadmin-digi-trigger-btn"
+            type="button"
+            onClick={() => setDigiOpen(true)}
+          >
+            DIGI AI Auto-Fill
+          </button>
           <button className="superadmin-secondary" type="button" onClick={onClose}>Back to sites</button>
           {site.public_url && <a className="superadmin-secondary" href={site.public_url} target="_blank" rel="noreferrer">View live card ↗</a>}
         </div>
@@ -1219,6 +1263,101 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
                 <button className="superadmin-secondary" type="button" disabled={publishing} onClick={() => setPublishModalOpen(false)}>Cancel</button>
                 <button className="superadmin-primary" type="button" disabled={publishing || !hasDraft} onClick={publishDraft}>
                   {publishing ? 'Publishing…' : 'Confirm and publish'}
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {digiOpen && (
+          <div className="superadmin-modal-backdrop" onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setDigiOpen(false);
+          }}>
+            <section className="superadmin-login superadmin-digi-modal" aria-labelledby="digi-modal-title">
+              <div className="superadmin-digi-header">
+                <div>
+                  <p className="superadmin-eyebrow">DIGIWORLD AI</p>
+                  <h2 id="digi-modal-title">DIGI Assistant &middot; Smart Intake</h2>
+                  <p className="superadmin-muted">
+                    Paste raw text from Facebook, Instagram, WhatsApp, or an SMS bio. DIGI will extract the details and place them into the correct card input boxes.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="superadmin-secondary"
+                  onClick={() => setDigiOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="superadmin-digi-body">
+                <label className="superadmin-digi-input-label">
+                  Paste raw text here:
+                  <textarea
+                    rows={8}
+                    className="superadmin-digi-textarea"
+                    placeholder="Paste FB About info, bio, or contact message..."
+                    value={digiRawInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDigiRawInput(val);
+                      if (val.trim()) {
+                        setDigiParsedPreview(parseClientRawData(val));
+                      } else {
+                        setDigiParsedPreview(null);
+                      }
+                    }}
+                  />
+                </label>
+
+                {digiParsedPreview && (
+                  <div className="superadmin-digi-preview">
+                    <h4>DIGI Extracted Fields:</h4>
+                    <div className="superadmin-digi-preview-grid">
+                      {Object.entries(digiParsedPreview.detected).map(([key, val]) => (
+                        <div key={key} className="superadmin-digi-preview-item">
+                          <small>{key.toUpperCase()}</small>
+                          <strong>{String(val)}</strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    {digiParsedPreview.links?.length > 0 && (
+                      <div className="superadmin-digi-preview-links">
+                        <h4>Detected Links ({digiParsedPreview.links.length}):</h4>
+                        <ul>
+                          {digiParsedPreview.links.map((link, i) => (
+                            <li key={i}>
+                              <span>{link.title}:</span> <code>{link.url}</code>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="superadmin-digi-actions">
+                <button
+                  type="button"
+                  className="superadmin-secondary"
+                  onClick={() => {
+                    setDigiRawInput('');
+                    setDigiParsedPreview(null);
+                  }}
+                  disabled={!digiRawInput}
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  className="superadmin-primary"
+                  onClick={handleDigiApply}
+                  disabled={!digiParsedPreview || Object.keys(digiParsedPreview.detected).length === 0}
+                >
+                  Apply to Form Fields
                 </button>
               </div>
             </section>
