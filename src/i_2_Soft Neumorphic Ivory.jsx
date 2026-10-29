@@ -1,3 +1,4 @@
+import { getImageFocalInfo } from "./lib/imageFocalPoint";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { profilesTable, productsTable, siteId, supabase } from "./lib/supabase";
@@ -318,6 +319,7 @@ function SoftNeumorphicIvory() {
 
   /* Intro Screen State */
   const [introPhase, setIntroPhase] = useState("loading");
+  const [isWritingReady, setIsWritingReady] = useState(false);
   const [profileImageLoadedUrl, setProfileImageLoadedUrl] = useState("");
   const [failedProfileImageUrl, setFailedProfileImageUrl] = useState("");
   const profileImageReady =
@@ -439,19 +441,53 @@ function SoftNeumorphicIvory() {
     };
   }, [profile?.profile_image_url]);
 
-  /* Intro Screen Reveal Timing: Proceeds to main card upon completion */
+  /* Distinct 3-Stage Cinematic Intro:
+     1. Stage 1 (0ms - 850ms): Loading bar fills up & Digipen NFC chip verifies
+     2. Stage 2 (850ms - 2500ms): Digipen glides down and writes name on screen
+     3. Stage 3 (2500ms+): Seamlessly reveals main profile card
+  */
   useEffect(() => {
-    // Guaranteed dismiss: once data is ready or after a fallback threshold, proceed to main card
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const revealDelay = reducedMotion ? 80 : 2100;
-    const exitDelay = reducedMotion ? 0 : 650;
+    if (!dataReady) return;
+    let active = true;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) {
+      setIntroPhase("done");
+      return;
+    }
 
-    const revealTimer = window.setTimeout(() => setIntroPhase('exiting'), revealDelay);
-    const finishTimer = window.setTimeout(() => setIntroPhase('done'), revealDelay + exitDelay);
+    const fontPromise = (document.fonts && document.fonts.ready)
+      ? document.fonts.ready
+      : Promise.resolve();
+
+    fontPromise.then(() => {
+      if (!active) return;
+      // Stage 1: Give 850ms for initial loading progress bar to sweep and verify
+      const writingTimer = window.setTimeout(() => {
+        if (!active) return;
+        setIsWritingReady(true);
+      }, 850);
+
+      // Stage 2: Digipen finishes writing (850ms + 1650ms = 2500ms)
+      const exitTimer = window.setTimeout(() => {
+        if (!active) return;
+        setIntroPhase("exiting");
+      }, 2550);
+
+      // Stage 3: Smooth reveal of main card
+      const finishTimer = window.setTimeout(() => {
+        if (!active) return;
+        setIntroPhase("done");
+      }, 3150);
+
+      return () => {
+        window.clearTimeout(writingTimer);
+        window.clearTimeout(exitTimer);
+        window.clearTimeout(finishTimer);
+      };
+    });
 
     return () => {
-      window.clearTimeout(revealTimer);
-      window.clearTimeout(finishTimer);
+      active = false;
       window.clearTimeout(rippleTimer.current);
     };
   }, [dataReady]);
@@ -899,7 +935,7 @@ function SoftNeumorphicIvory() {
 
               {/* Writing Canvas / Signature Pad */}
               <div className="ivory-writing-stage">
-                <div className="ivory-handwritten-wrap">
+                <div className={"ivory-handwritten-wrap" + (isWritingReady ? " is-writing-active" : "")}>
                   {/* Animated Calligraphic Name Writing */}
                   <span className="ivory-handwritten-name">
                     {profile?.name || "Business Card"}
@@ -998,7 +1034,7 @@ function SoftNeumorphicIvory() {
 
               <p className="ivory-intro-caption">
                 <span className="ivory-intro-loading-dot" aria-hidden="true" />
-                Writing personalized profile via Digipen...
+                {isWritingReady ? "Writing personalized profile via Digipen..." : "Reading Digipen NFC data..."}
               </p>
               <span className="ivory-intro-card-shine" aria-hidden="true" />
             </div>
@@ -1062,7 +1098,7 @@ function SoftNeumorphicIvory() {
             <section className="ivory-profile" aria-label="Business owner profile">
               <div className="ivory-avatar">
                 {profile?.profile_image_url && failedProfileImageUrl !== profile.profile_image_url ? (
-                  <img src={profile.profile_image_url} alt={displayName} onLoad={() => setProfileImageLoadedUrl(profile.profile_image_url)} onError={() => setFailedProfileImageUrl(profile.profile_image_url)} />
+                  <img src={profile.profile_image_url} alt={displayName} style={{ objectPosition: getImageFocalInfo(profile.profile_image_url).objectPosition }} onLoad={() => setProfileImageLoadedUrl(profile.profile_image_url)} onError={() => setFailedProfileImageUrl(profile.profile_image_url)} />
                 ) : (
                   <i className="fa-solid fa-user" aria-hidden="true" />
                 )}
@@ -1224,7 +1260,7 @@ function SoftNeumorphicIvory() {
                       onClick={() => openProductDialog(product)}
                     >
                       {product.image_url ? (
-                        <img src={product.image_url} alt={product.alt || product.name} loading="lazy" />
+                        <img src={product.image_url} alt={product.alt || product.name} loading="lazy" style={{ objectPosition: getImageFocalInfo(product.image_url).objectPosition }} />
                       ) : (
                         <div className="ivory-product-placeholder" aria-hidden="true">
                           <i className="fa-solid fa-box-open" />
@@ -1259,7 +1295,7 @@ function SoftNeumorphicIvory() {
                 {dialog.type === "payment" ? (
                   <>
                     <h2 id="ivory-dialog-title">{dialog.payment.label} payment QR</h2>
-                    <img src={dialog.payment.qr_image_url} alt={`${dialog.payment.label} payment QR code`} />
+                    <img src={dialog.payment.qr_image_url} alt={`${dialog.payment.label} payment QR code`} style={{ objectPosition: getImageFocalInfo(dialog.payment.qr_image_url).objectPosition }} />
                     {dialog.payment.payment_url && (
                       <a href={dialog.payment.payment_url} target="_blank" rel="noopener noreferrer">
                         Open payment link
@@ -1330,7 +1366,7 @@ function SoftNeumorphicIvory() {
                         onClick={() => openLightbox(0)}
                         title="Click to view full image"
                       >
-                        <img src={dialog.product.image_url} alt={dialog.product.alt || dialog.product.name} />
+                        <img src={dialog.product.image_url} alt={dialog.product.alt || dialog.product.name} style={{ objectPosition: getImageFocalInfo(dialog.product.image_url).objectPosition }} />
                         <span className="ivory-zoom-hint">
                           <i className="fa-solid fa-expand" aria-hidden="true" /> Zoom
                         </span>

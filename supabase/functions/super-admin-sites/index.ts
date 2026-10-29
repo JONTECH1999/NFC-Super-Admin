@@ -1635,12 +1635,13 @@ Deno.serve(async (request) => {
 
       const prompt = String(body.prompt || "").trim();
       const chatHistory = Array.isArray(body.history) ? body.history : [];
+      const userContext = isObject(body.current_context) ? body.current_context : {};
       if (!prompt) return invalid("Message prompt is required.", origin);
 
-      // Fetch fresh system snapshot for DIGI
+      // Fetch fresh system snapshot for DIGI including templates
       const { data: allSites } = await serviceClient
         .from("managed_sites")
-        .select("site_id, name, is_active, is_trial, trial_started_at, trial_ends_at, payment_status, client_email");
+        .select("site_id, name, is_active, is_trial, trial_started_at, trial_ends_at, payment_status, client_email, profile_table, products_table");
 
       const usageStart = new Date();
       usageStart.setUTCDate(usageStart.getUTCDate() - 6);
@@ -1654,19 +1655,13 @@ Deno.serve(async (request) => {
         .select("id, site_id, client_email, request_type, status, created_at")
         .eq("status", "pending");
 
-      const activeSites = (allSites || []).filter((s: { is_active: boolean; site_id: string; is_trial: boolean }) => s.is_active && !/^calling-card-d(?:[1-9]|10)$/i.test(s.site_id) && !s.is_trial);
-      const pausedSites = (allSites || []).filter((s: { is_active: boolean }) => !s.is_active);
-      const trialSites = (allSites || []).filter((s: { is_trial: boolean }) => s.is_trial);
-
       const systemContext = {
-        total_registered_sites: allSites?.length || 0,
-        active_client_sites: activeSites.map((s: { site_id: string; name: string; payment_status: string }) => ({ site_id: s.site_id, name: s.name, payment: s.payment_status })),
-        paused_sites: pausedSites.map((s: { site_id: string; name: string }) => ({ site_id: s.site_id, name: s.name })),
-        prospect_trials: trialSites.map((s: { site_id: string; name: string; trial_ends_at: string | null }) => ({
+        registered_sites: (allSites || []).map((s: { site_id: string; name: string; is_active: boolean; is_trial: boolean; profile_table: string }) => ({
           site_id: s.site_id,
           name: s.name,
-          trial_ends_at: s.trial_ends_at,
-          expired: s.trial_ends_at ? new Date(s.trial_ends_at) <= new Date() : false
+          is_active: s.is_active,
+          is_trial: s.is_trial,
+          table: s.profile_table
         })),
         pending_edit_requests: (pendingRequests || []).map((r: { site_id: string; client_email: string; request_type: string; created_at: string }) => ({
           site_id: r.site_id,
@@ -1674,30 +1669,100 @@ Deno.serve(async (request) => {
           type: r.request_type,
           created_at: r.created_at
         })),
-        recent_trial_views_summary: (usageData || []).reduce((acc: { views: number; visitors: number }, u: { page_views: number; unique_visitors: number }) => {
+        recent_trial_views: (usageData || []).reduce((acc: { views: number; visitors: number }, u: { page_views: number; unique_visitors: number }) => {
           acc.views = (acc.views || 0) + Number(u.page_views || 0);
           acc.visitors = (acc.visitors || 0) + Number(u.unique_visitors || 0);
           return acc;
         }, { views: 0, visitors: 0 })
       };
 
-      const systemPrompt = `You are DIGI, the dedicated, friendly, and intelligent AI Assistant for Digiworld (handling Digipen NFC, Digi Card NFC, and digital calling cards).
+      const systemPrompt = `You are DIGI, the dedicated AI assistant for Digiworld (handling Digipen NFC, Digi Card NFC, and digital calling cards).
 You live inside the Super Admin control center.
-You have live, real-time access to the platform's state:
+
+CURRENT SCREEN & CONTEXT OF THE USER:
+${JSON.stringify(userContext, null, 2)}
+IMPORTANT: If the user is currently editing a site (e.g. userContext.editing_site_id is "${userContext.editing_site_id || ''}") and says things like "put a name aljon", "change phone to 0912...", "update description", or "empty this site", THEY ARE REFERRING TO THE CURRENT SITE THEY ARE EDITING (${userContext.editing_site_id || 'none currently open'})! You DO NOT need to ask them which site or where to put it—apply it directly to userContext.editing_site_id!
+
+DATABASE FIRST:
+All site data lives in the database. When the user asks about a site (like "Aljon Contacts" or "calling-card-d4"), DO NOT fetch external website URLs via HTTP. Use the "get_site_details" or "copy_site_content" tool to inspect and copy database records directly!
+
+You have full tools to:
+1. "get_site_details": Read any site's current live profile, products, and custom links from the database.
+2. "copy_site_content": Copy all profile info, products, social buttons, and payment methods from one site (e.g. aljon-contacts) directly into another site's draft (e.g. calling-card-d4).
+3. "clear_site_data": Clear or reset a site's draft completely back to empty (clears all profile fields, social links, payment QR buttons, and products). Use this immediately when the user asks to "clear", "empty", or "reset" a site or template!
+4. "update_site_draft": Update specific profile fields for any site.
+5. Report platform stats, trials, and active sites.
+
+Live registered sites:
 ${JSON.stringify(systemContext, null, 2)}
 
-Your roles:
-1. System Monitoring: Answer questions accurately about active clients, paused sites, prospect trials, traffic analytics, and pending edit requests.
-2. Data Intake Assistant: If the user pastes raw client text (from Facebook, Instagram, bio, WhatsApp), parse and organize the details cleanly for them.
-3. Tone: Professional, concise, sharp, and helpful. Use clean Markdown formatting with bullet points. Avoid childish emoji spam; keep it executive and sleek.
-4. If asked to do something outside your read-only knowledge (like physically deleting a database), remind them they can execute that directly from the Super Admin buttons.`;
+When the user asks to copy details from Aljon Contacts to calling-card-d4, call "copy_site_content".
+When the user asks to clear, reset, or empty calling-card-d4 (or the currently open site), call "clear_site_data" directly!`;
 
-      const messages = [
-        ...chatHistory.slice(-8).map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
+      const tools = [
+        {
+          name: "get_site_details",
+          description: "Read the full database profile and products of any site using its site_id (e.g. aljon-contacts, calling-card-d4)",
+          input_schema: {
+            type: "object",
+            properties: {
+              site_id: { type: "string", description: "The site_id to inspect" }
+            },
+            required: ["site_id"]
+          }
+        },
+        {
+          name: "clear_site_data",
+          description: "Completely clear and empty all data (profile, social links, buttons, payment methods, and products) from a site draft or reset it back to empty.",
+          input_schema: {
+            type: "object",
+            properties: {
+              site_id: { type: "string", description: "The site_id to clear, e.g. calling-card-d4" }
+            },
+            required: ["site_id"]
+          }
+        },
+        {
+          name: "copy_site_content",
+          description: "Copy full profile details, links, social buttons, and products from one site to another site draft",
+          input_schema: {
+            type: "object",
+            properties: {
+              from_site_id: { type: "string", description: "Source site_id, e.g. aljon-contacts" },
+              to_site_id: { type: "string", description: "Destination site_id, e.g. calling-card-d4" }
+            },
+            required: ["from_site_id", "to_site_id"]
+          }
+        },
+        {
+          name: "update_site_draft",
+          description: "Update the draft profile fields of any registered site or template in the database",
+          input_schema: {
+            type: "object",
+            properties: {
+              site_id: { type: "string", description: "The site_id to update, e.g. calling-card-d4" },
+              name: { type: "string", description: "Person name / contact person" },
+              business: { type: "string", description: "Business name" },
+              role: { type: "string", description: "Role or title" },
+              phone: { type: "string", description: "Phone number" },
+              email: { type: "string", description: "Public email" },
+              address: { type: "string", description: "Physical address" },
+              description: { type: "string", description: "Business bio / description" },
+              facebook: { type: "string", description: "Facebook URL" },
+              eyebrow: { type: "string", description: "Tagline or category" }
+            },
+            required: ["site_id"]
+          }
+        }
+      ];
+
+      const messages: Array<{ role: string; content: any }> = [
+        ...chatHistory.slice(-6).map((m: { role: string; content: string }) => ({ role: m.role, content: m.content })),
         { role: "user", content: prompt }
       ];
 
-      const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
+      // Initial Call
+      let claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "x-api-key": anthropicApiKey,
@@ -1708,20 +1773,224 @@ Your roles:
           model: "claude-haiku-5-5",
           max_tokens: 1024,
           system: systemPrompt,
+          tools,
           messages
         })
       });
 
       if (!claudeResponse.ok) {
         const errText = await claudeResponse.text();
-        console.error("Anthropic API error:", errText);
-        return jsonResponse({ error: "Anthropic API request failed: " + errText }, 502, origin);
+        return jsonResponse({ error: "Anthropic error: " + errText }, 502, origin);
       }
 
-      const claudeData = await claudeResponse.json();
-      const reply = claudeData.content?.[0]?.text || "I was unable to process that request.";
+      let claudeData = await claudeResponse.json();
 
-      return jsonResponse({ reply }, 200, origin);
+      // Handle tool calls in a loop (up to 3 turns)
+      let turns = 0;
+      let lastUpdatedSiteId: string | null = null;
+      while (claudeData.stop_reason === "tool_use" && turns < 3) {
+        turns++;
+        const toolUseBlock = claudeData.content?.find((c: { type: string }) => c.type === "tool_use");
+        if (!toolUseBlock) break;
+
+        let toolResultText = "";
+        if (toolUseBlock.name === "get_site_details") {
+          try {
+            const sid = String(toolUseBlock.input?.site_id || "").toLowerCase().trim();
+            const target = (allSites || []).find((s: { site_id: string }) => s.site_id === sid);
+            if (!target) {
+              toolResultText = "Site not found in managed_sites.";
+            } else {
+              const { data: prof } = await serviceClient.from(target.profile_table).select("*").maybeSingle();
+              const { data: prods } = await serviceClient.from(target.products_table).select("*");
+              const { data: draft } = await serviceClient.from("site_content_drafts").select("*").eq("site_id", sid).maybeSingle();
+              toolResultText = JSON.stringify({
+                profile: draft?.profile || prof || {},
+                products: draft?.products || prods || []
+              });
+            }
+          } catch (e) {
+            toolResultText = "Error getting site details: " + String(e);
+          }
+        } else if (toolUseBlock.name === "clear_site_data") {
+          try {
+            const sid = String(toolUseBlock.input?.site_id || userContext.editing_site_id || "").toLowerCase().trim();
+            const target = (allSites || []).find((s: { site_id: string }) => s.site_id === sid);
+            if (!target) {
+              toolResultText = `Site ${sid} was not found in managed sites.`;
+            } else {
+              const emptyProfile = {
+                name: "",
+                business: "",
+                role: "",
+                eyebrow: "",
+                phone: "",
+                phone_link: "",
+                email: "",
+                address: "",
+                address_link: "",
+                facebook: "",
+                youtube: "",
+                description: "",
+                profile_image_url: "",
+                site_title: "",
+                site_icon_url: "",
+                theme_mode: "pitch-black",
+                custom_qr_url: "",
+                custom_links: []
+              };
+              const emptyProducts: any[] = [];
+              const nowIso = new Date().toISOString();
+
+              const { error: clearErr } = await serviceClient
+                .from("site_content_drafts")
+                .upsert({
+                  site_id: sid,
+                  profile: emptyProfile,
+                  products: emptyProducts,
+                  updated_by: userResult.user.id,
+                  updated_at: nowIso,
+                  published_at: null
+                }, { onConflict: "site_id" });
+
+              if (clearErr) throw clearErr;
+              lastUpdatedSiteId = sid;
+              await recordActivity(sid, "digi_content_cleared", `DIGI AI cleared all draft data for ${sid}.`);
+              toolResultText = `Successfully cleared all data (profile details, social links, buttons, payment QR codes, and products) from ${sid}. The draft is now completely empty.`;
+            }
+          } catch (err) {
+            toolResultText = "Error clearing site data: " + String(err);
+          }
+        } else if (toolUseBlock.name === "copy_site_content") {
+          try {
+            const fromId = String(toolUseBlock.input?.from_site_id || "").toLowerCase().trim();
+            const toId = String(toolUseBlock.input?.to_site_id || userContext.editing_site_id || "").toLowerCase().trim();
+
+            const fromSite = (allSites || []).find((s: { site_id: string }) => s.site_id === fromId);
+            const toSite = (allSites || []).find((s: { site_id: string }) => s.site_id === toId);
+
+            if (!fromSite || !toSite) {
+              toolResultText = `Could not find site: ${!fromSite ? fromId : toId} in managed sites.`;
+            } else {
+              // Fetch source profile & products
+              const { data: sourceProf } = await serviceClient.from(fromSite.profile_table).select("*").maybeSingle();
+              const { data: sourceProds } = await serviceClient.from(fromSite.products_table).select("*");
+              const { data: sourceDraft } = await serviceClient.from("site_content_drafts").select("*").eq("site_id", fromId).maybeSingle();
+
+              const rawProfile = sourceDraft?.profile || sourceProf || {};
+              const rawProducts = sourceDraft?.products || sourceProds || [];
+
+              // Strip system keys and ensure only valid editable fields
+              const finalProfile = Object.fromEntries(
+                Object.entries(rawProfile).filter(([k]) => editableProfileFields.has(k))
+              );
+
+              // Normalize products
+              const finalProducts = (Array.isArray(rawProducts) ? rawProducts : []).map((p: any) => ({
+                id: p.id,
+                name: p.name || "",
+                price: p.price || "",
+                description: p.description || "",
+                image_url: p.image_url || "",
+                alt: p.alt || "",
+                gallery: Array.isArray(p.gallery) ? p.gallery : [],
+                is_featured: Boolean(p.is_featured),
+                sort_order: p.sort_order || 0
+              }));
+
+              const nowIso = new Date().toISOString();
+              const { error: copyErr } = await serviceClient
+                .from("site_content_drafts")
+                .upsert({
+                  site_id: toId,
+                  profile: finalProfile,
+                  products: finalProducts,
+                  updated_by: userResult.user.id,
+                  updated_at: nowIso,
+                  published_at: null
+                }, { onConflict: "site_id" });
+
+              if (copyErr) throw copyErr;
+              lastUpdatedSiteId = toId;
+              await recordActivity(toId, "digi_content_copied", `DIGI AI copied full site content from ${fromId}.`);
+              toolResultText = `Successfully copied profile information, products, social buttons, and payment methods from ${fromId} to ${toId}. The draft has been saved on ${toId} and is ready for review and publishing in the editor.`;
+            }
+          } catch (e) {
+            toolResultText = "Error copying site content: " + String(e);
+          }
+        } else if (toolUseBlock.name === "update_site_draft") {
+          try {
+            const targetSiteId = String(toolUseBlock.input?.site_id || userContext.editing_site_id || "").toLowerCase().trim();
+            const { site_id, ...profileFields } = toolUseBlock.input || {};
+
+            const { data: existingDraft } = await serviceClient
+              .from("site_content_drafts")
+              .select("profile, products")
+              .eq("site_id", targetSiteId)
+              .maybeSingle();
+
+            const filteredFields = Object.fromEntries(
+              Object.entries(profileFields).filter(([k]) => editableProfileFields.has(k))
+            );
+
+            const mergedProfile = { ...(existingDraft?.profile || {}), ...filteredFields };
+            const nowIso = new Date().toISOString();
+            const { error: saveErr } = await serviceClient
+              .from("site_content_drafts")
+              .upsert({
+                site_id: targetSiteId,
+                profile: mergedProfile,
+                products: existingDraft?.products || [],
+                updated_by: userResult.user.id,
+                updated_at: nowIso,
+                published_at: null
+              }, { onConflict: "site_id" });
+
+            if (saveErr) throw saveErr;
+            lastUpdatedSiteId = targetSiteId;
+            await recordActivity(targetSiteId, "digi_draft_updated", "DIGI AI updated draft fields.");
+            toolResultText = `Successfully updated draft for site ${targetSiteId} with fields: ${Object.keys(filteredFields).join(", ")}. Draft is saved privately.`;
+          } catch (updateErr) {
+            toolResultText = "Error updating draft: " + String(updateErr);
+          }
+        }
+
+        messages.push({ role: "assistant", content: claudeData.content });
+        messages.push({
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: toolUseBlock.id,
+              content: toolResultText
+            }
+          ]
+        });
+
+        claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": anthropicApiKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-5-5",
+            max_tokens: 1024,
+            system: systemPrompt,
+            tools,
+            messages
+          })
+        });
+
+        if (!claudeResponse.ok) break;
+        claudeData = await claudeResponse.json();
+      }
+
+      const textBlock = claudeData.content?.find((c: { type: string }) => c.type === "text");
+      const reply = textBlock?.text || "I have processed your request.";
+
+      return jsonResponse({ reply, updated_site_id: lastUpdatedSiteId }, 200, origin);
     }
 
     if (body.action === "set_edit_request_status") {

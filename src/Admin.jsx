@@ -11,6 +11,9 @@ import {
   PublicationConfirmation,
 } from './ClientLegal';
 import './admin.css';
+import './image-focal.css';
+import ImageFocalModal from './ImageFocalModal';
+import { getImageFocalInfo } from './lib/imageFocalPoint';
 
 const requiresLegalOnboarding = /^calling-card-d(?:[1-9]|10)$/.test(siteId);
 const CACHE_SCOPE = (() => {
@@ -319,6 +322,7 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
   const [customLinks, setCustomLinks] = useState([]);
   const [pendingLinkRemoval, setPendingLinkRemoval] = useState(null);
   const [uploadingPaymentIndex, setUploadingPaymentIndex] = useState(null);
+  const [focalModal, setFocalModal] = useState(null);
   const fileRef = useRef(null);
   const iconFileRef = useRef(null);
 
@@ -498,6 +502,11 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
       const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
       handleUpdateCustomLink(index, 'qr_image_url', urlData.publicUrl);
       showToast('Payment QR image uploaded.', 'success');
+      setFocalModal({
+        imageUrl: urlData.publicUrl,
+        title: 'Adjust Payment QR Framing',
+        onSave: (finalUrl) => handleUpdateCustomLink(index, 'qr_image_url', finalUrl),
+      });
     } catch (err) {
       showToast('Payment QR upload failed: ' + err.message, 'error');
     } finally {
@@ -516,6 +525,11 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
       const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
       handleChange('profile_image_url', urlData.publicUrl);
       showToast('Image uploaded successfully', 'success');
+      setFocalModal({
+        imageUrl: urlData.publicUrl,
+        title: 'Adjust Profile Image Focus',
+        onSave: (finalUrl) => handleChange('profile_image_url', finalUrl),
+      });
     } catch (err) {
       showToast('Image upload failed: ' + err.message, 'error');
     } finally {
@@ -535,6 +549,11 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
       const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
       handleChange('site_icon_url', urlData.publicUrl);
       showToast('Site icon uploaded successfully', 'success');
+      setFocalModal({
+        imageUrl: urlData.publicUrl,
+        title: 'Adjust Site Icon Focus',
+        onSave: (finalUrl) => handleChange('site_icon_url', finalUrl),
+      });
     } catch (err) {
       showToast('Icon upload failed: ' + err.message, 'error');
     } finally {
@@ -683,7 +702,11 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <div className="admin-image-preview" style={{ width: 48, height: 48, borderRadius: 8 }}>
                 {form.site_icon_url ? (
-                  <img src={form.site_icon_url} alt="Site icon" />
+                  <img
+                    src={form.site_icon_url}
+                    alt="Site icon"
+                    style={{ objectPosition: getImageFocalInfo(form.site_icon_url).objectPosition }}
+                  />
                 ) : (
                   <span className="admin-image-preview-placeholder" style={{ fontSize: '0.7rem' }}>No icon</span>
                 )}
@@ -691,6 +714,19 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
               <div className="admin-file-input">
                 <input type="file" accept="image/*" onChange={handleIconUpload} ref={iconFileRef} />
               </div>
+              {form.site_icon_url && (
+                <button
+                  type="button"
+                  className="image-framing-trigger"
+                  onClick={() => setFocalModal({
+                    imageUrl: form.site_icon_url,
+                    title: 'Adjust Site Icon Focus',
+                    onSave: (finalUrl) => handleChange('site_icon_url', finalUrl),
+                  })}
+                >
+                  Adjust Framing
+                </button>
+              )}
             </div>
             {uploadingIcon && <div className="admin-uploading">Uploading icon…</div>}
           </div>
@@ -859,13 +895,32 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
         <h3 className="admin-card-title">Profile Image</h3>
         <div className="admin-image-preview">
           {form.profile_image_url ? (
-            <img src={form.profile_image_url} alt="Profile" />
+            <img
+              src={form.profile_image_url}
+              alt="Profile"
+              style={{ objectPosition: getImageFocalInfo(form.profile_image_url).objectPosition }}
+            />
           ) : (
             <span className="admin-image-preview-placeholder">No image</span>
           )}
         </div>
-        <div className="admin-file-input">
-          <input type="file" accept="image/*" onChange={handleImageUpload} ref={fileRef} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+          <div className="admin-file-input">
+            <input type="file" accept="image/*" onChange={handleImageUpload} ref={fileRef} />
+          </div>
+          {form.profile_image_url && (
+            <button
+              type="button"
+              className="image-framing-trigger"
+              onClick={() => setFocalModal({
+                imageUrl: form.profile_image_url,
+                title: 'Adjust Profile Image Focus',
+                onSave: (finalUrl) => handleChange('profile_image_url', finalUrl),
+              })}
+            >
+              Adjust Framing
+            </button>
+          )}
         </div>
         {uploading && <div className="admin-uploading">Uploading image…</div>}
       </div>
@@ -1096,7 +1151,13 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
               <div className="admin-payment-link-top">
                 <div className="admin-payment-preview">
                   {item.qr_image_url
-                    ? <img src={item.qr_image_url} alt={`${item.label || 'Payment'} QR preview`} />
+                    ? (
+                      <img
+                        src={item.qr_image_url}
+                        alt={`${item.label || 'Payment'} QR preview`}
+                        style={{ objectPosition: getImageFocalInfo(item.qr_image_url).objectPosition }}
+                      />
+                    )
                     : <i className="fa-solid fa-qrcode" aria-hidden="true" />}
                 </div>
                 <div className="admin-payment-fields">
@@ -1144,6 +1205,19 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
                         onChange={(event) => handlePaymentQrUpload(index, event)}
                       />
                     </label>
+                    {item.qr_image_url && (
+                      <button
+                        type="button"
+                        className="image-framing-trigger"
+                        onClick={() => setFocalModal({
+                          imageUrl: item.qr_image_url,
+                          title: `Adjust ${item.label || 'Payment'} QR Framing`,
+                          onSave: (finalUrl) => handleUpdateCustomLink(index, 'qr_image_url', finalUrl),
+                        })}
+                      >
+                        Adjust Framing
+                      </button>
+                    )}
                     <span>PNG, JPG, or WebP · 5 MB max</span>
                   </div>
                   <div className="admin-payment-url-field">
@@ -1235,6 +1309,15 @@ function ProfileTab({ showToast, section, submitEditRequest, draftKey, requiresP
           </section>
         </div>
       )}
+
+      {focalModal && (
+        <ImageFocalModal
+          imageUrl={focalModal.imageUrl}
+          title={focalModal.title}
+          onSave={focalModal.onSave}
+          onClose={() => setFocalModal(null)}
+        />
+      )}
     </>
   );
 }
@@ -1253,6 +1336,7 @@ function ProductsTab({ showToast, submitEditRequest, draftKey, requiresPublicati
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [focalModal, setFocalModal] = useState(null);
   const fileRef = useRef(null);
   const galleryRef = useRef(null);
 
@@ -1338,6 +1422,11 @@ function ProductsTab({ showToast, submitEditRequest, draftKey, requiresPublicati
       const { data: urlData } = supabase.storage.from('images').getPublicUrl(path);
       handleFormChange('image_url', urlData.publicUrl);
       showToast('Image uploaded', 'success');
+      setFocalModal({
+        imageUrl: urlData.publicUrl,
+        title: 'Adjust Product Image Framing',
+        onSave: (finalUrl) => handleFormChange('image_url', finalUrl),
+      });
     } catch (err) {
       showToast('Image upload failed: ' + err.message, 'error');
     } finally {
@@ -1511,8 +1600,31 @@ function ProductsTab({ showToast, submitEditRequest, draftKey, requiresPublicati
 
             <div className="admin-form-group">
               <HelpLabel help="Choose the main photo customers will see for this product.">Main Image</HelpLabel>
-              {productForm.image_url && <div className="admin-image-preview"><img src={productForm.image_url} alt="Product" /></div>}
-              <div className="admin-file-input"><input type="file" accept="image/*" onChange={handleProductImage} ref={fileRef} /></div>
+              {productForm.image_url && (
+                <div className="admin-image-preview">
+                  <img
+                    src={productForm.image_url}
+                    alt="Product"
+                    style={{ objectPosition: getImageFocalInfo(productForm.image_url).objectPosition }}
+                  />
+                </div>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                <div className="admin-file-input"><input type="file" accept="image/*" onChange={handleProductImage} ref={fileRef} /></div>
+                {productForm.image_url && (
+                  <button
+                    type="button"
+                    className="image-framing-trigger"
+                    onClick={() => setFocalModal({
+                      imageUrl: productForm.image_url,
+                      title: 'Adjust Product Image Framing',
+                      onSave: (finalUrl) => handleFormChange('image_url', finalUrl),
+                    })}
+                  >
+                    Adjust Framing
+                  </button>
+                )}
+              </div>
               {uploading && <div className="admin-uploading">Uploading…</div>}
             </div>
 
@@ -1549,7 +1661,13 @@ function ProductsTab({ showToast, submitEditRequest, draftKey, requiresPublicati
             {products.map((product) => (
               <div className="admin-product-item" key={product.id}>
                 <div className="admin-product-thumb">
-                  {product.image_url ? <img src={product.image_url} alt={product.name} /> : <span className="admin-product-thumb-placeholder">🖼</span>}
+                  {product.image_url ? (
+                    <img
+                      src={product.image_url}
+                      alt={product.name}
+                      style={{ objectPosition: getImageFocalInfo(product.image_url).objectPosition }}
+                    />
+                  ) : <span className="admin-product-thumb-placeholder">🖼</span>}
                 </div>
                 <div className="admin-product-info">
                   <h4>{product.name}</h4>
@@ -1569,6 +1687,15 @@ function ProductsTab({ showToast, submitEditRequest, draftKey, requiresPublicati
           </div>
         )}
       </div>
+
+      {focalModal && (
+        <ImageFocalModal
+          imageUrl={focalModal.imageUrl}
+          title={focalModal.title}
+          onSave={focalModal.onSave}
+          onClose={() => setFocalModal(null)}
+        />
+      )}
     </>
   );
 }

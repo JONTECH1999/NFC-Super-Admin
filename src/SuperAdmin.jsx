@@ -1123,7 +1123,19 @@ function SuperAdmin() {
           </form>
         </div>
       )}
-      <DigiFloatingChat invoke={invoke} />
+      <DigiFloatingChat
+        invoke={invoke}
+        currentContext={{
+          active_page: activePage,
+          editing_site_id: editingSiteId || null,
+          editing_site_name: editingSiteId ? sites.find((s) => s.site_id === editingSiteId)?.name : null
+        }}
+        onDataChanged={(updatedSiteId) => {
+          window.dispatchEvent(new CustomEvent('digi:content_updated', { detail: { site_id: updatedSiteId } }));
+          loadSites();
+          loadDashboardData();
+        }}
+      />
       <footer className="superadmin-footer">Client passwords are set by the administrator and never stored in this dashboard.</footer>
     </main>
   );

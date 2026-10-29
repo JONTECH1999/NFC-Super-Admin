@@ -1,0 +1,341 @@
+/* Image Focal Modal & Cropping Framing Styles */
+.image-focal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: focalFadeIn 0.2s ease-out;
+  box-sizing: border-box;
+}
+
+@keyframes focalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.image-focal-modal {
+  background: #18181b;
+  color: #f4f4f5;
+  border: 1px solid #27272a;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 860px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+
+.image-focal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid #27272a;
+}
+
+.image-focal-header-titles h3 {
+  margin: 0 0 4px 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.image-focal-header-titles p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #a1a1aa;
+}
+
+.image-focal-close {
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.image-focal-close:hover {
+  background: #27272a;
+  color: #fff;
+}
+
+.image-focal-body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 20px;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.image-focal-interactive-area {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.image-focal-image-wrap {
+  position: relative;
+  background: #09090b;
+  border: 1px solid #27272a;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  max-height: 440px;
+}
+
+.image-focal-source {
+  display: block;
+  max-width: 100%;
+  max-height: 440px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* Crosshair indicator */
+.image-focal-crosshair {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  margin-left: -18px;
+  margin-top: -18px;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.05s ease;
+}
+
+.image-focal-crosshair-ring {
+  width: 36px;
+  height: 36px;
+  border: 2px solid #38bdf8;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.6), inset 0 0 6px rgba(56, 189, 248, 0.4);
+  position: absolute;
+}
+
+.image-focal-crosshair-dot {
+  width: 6px;
+  height: 6px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 4px #000;
+}
+
+/* Quick presets */
+.image-focal-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.image-focal-presets-label {
+  font-size: 0.8rem;
+  color: #a1a1aa;
+  font-weight: 500;
+  margin-right: 4px;
+}
+
+.image-focal-preset-btn {
+  background: #27272a;
+  color: #d4d4d8;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.image-focal-preset-btn:hover {
+  background: #3f3f46;
+  color: #fff;
+}
+
+.image-focal-preset-btn.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #fff;
+}
+
+/* Preview Sidebar */
+.image-focal-preview-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #202024;
+  border: 1px solid #2e2e33;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.image-focal-preview-sidebar h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.image-focal-preview-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #a1a1aa;
+}
+
+.image-focal-previews {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.image-focal-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.image-focal-preview-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.image-focal-frame {
+  background: #0c0a09;
+  border: 1px solid #3f3f46;
+  overflow: hidden;
+  position: relative;
+}
+
+.image-focal-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-focal-frame.portrait {
+  width: 100%;
+  height: 140px;
+  border-radius: 10px;
+}
+
+.image-focal-frame.square {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  margin: 0 auto;
+}
+
+.image-focal-coordinates-badge {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  text-align: center;
+  margin-top: auto;
+}
+
+.image-focal-coordinates-badge strong {
+  color: #38bdf8;
+}
+
+/* Footer */
+.image-focal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid #27272a;
+  background: #18181b;
+}
+
+.image-focal-cancel-btn {
+  background: transparent;
+  border: 1px solid #3f3f46;
+  color: #d4d4d8;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.image-focal-cancel-btn:hover {
+  background: #27272a;
+  color: #fff;
+}
+
+.image-focal-save-btn {
+  background: #2563eb;
+  border: 1px solid #3b82f6;
+  color: #fff;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+}
+
+.image-focal-save-btn:hover {
+  background: #1d4ed8;
+}
+
+/* Framing action trigger buttons in Admin & SuperAdmin */
+.image-framing-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.image-framing-trigger:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+@media (max-width: 680px) {
+  .image-focal-body {
+    grid-template-columns: 1fr;
+  }
+  .image-focal-preview-sidebar {
+    order: 2;
+  }
+}

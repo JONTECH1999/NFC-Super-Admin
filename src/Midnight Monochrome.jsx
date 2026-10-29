@@ -1,3 +1,4 @@
+import { getImageFocalInfo } from "./lib/imageFocalPoint";
 import { useEffect, useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { profilesTable, productsTable, siteId, supabase } from "./lib/supabase";
@@ -523,7 +524,7 @@ function Digipen() {
                     onClick={() => setDialog({ type: "product", product })}
                   >
                     {product.image_url ? (
-                      <img src={product.image_url} alt="" loading="lazy" />
+                      <img src={product.image_url} alt="" loading="lazy" style={{ objectPosition: getImageFocalInfo(product.image_url).objectPosition }} />
                     ) : (
                       <span className="digipen-service-placeholder"><i className="fa-regular fa-image" /></span>
                     )}
@@ -590,7 +591,7 @@ function Digipen() {
                 <>
                   <h2 id="digipen-dialog-title">Pay with {dialog.payment.label}</h2>
                   <p>Scan this payment QR code to continue.</p>
-                  <img className="digipen-payment-qr" src={dialog.payment.qr_image_url} alt={`${dialog.payment.label} payment QR code`} />
+                  <img className="digipen-payment-qr" src={dialog.payment.qr_image_url} style={{ objectPosition: getImageFocalInfo(dialog.payment.qr_image_url).objectPosition }} alt={`${dialog.payment.label} payment QR code`} />
                   {dialog.payment.payment_url && (
                     <a className="digipen-payment-link" href={dialog.payment.payment_url} target="_blank" rel="noopener noreferrer">
                       Open payment link <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />

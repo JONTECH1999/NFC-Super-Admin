@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from './lib/supabase';
-import { parseClientRawData } from './lib/digiAssistant';
+import './image-focal.css';
+import ImageFocalModal from './ImageFocalModal';
+import { getImageFocalInfo } from './lib/imageFocalPoint';
 
 const profileGroups = [
   {
@@ -402,6 +404,7 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState('');
+  const [focalModal, setFocalModal] = useState(null);
   const [publishing, setPublishing] = useState(false);
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
@@ -415,11 +418,6 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
   const [localDraftSavedAt, setLocalDraftSavedAt] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-
-  /* ── DIGI AI Assistant State ── */
-  const [digiOpen, setDigiOpen] = useState(false);
-  const [digiRawInput, setDigiRawInput] = useState('');
-  const [digiParsedPreview, setDigiParsedPreview] = useState(null);
 
   const loadEditor = useCallback(async () => {
     setLoading(true);
@@ -478,6 +476,18 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
   }, [loadEditor]);
 
   useEffect(() => {
+    const handleSync = (event) => {
+      const updatedSiteId = event.detail?.site_id;
+      if (!updatedSiteId || updatedSiteId === site.site_id) {
+        if (draftCacheKey) clearLocalDraft(draftCacheKey);
+        loadEditor();
+      }
+    };
+    window.addEventListener('digi:content_updated', handleSync);
+    return () => window.removeEventListener('digi:content_updated', handleSync);
+  }, [draftCacheKey, loadEditor, site.site_id]);
+
+  useEffect(() => {
     if (!dirty || loading || !draftCacheKey) return;
     const savedAt = Date.now();
     try {
@@ -511,37 +521,6 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
     setNotice('');
   };
 
-  /* ── Apply DIGI AI Extracted Information ── */
-  const handleDigiApply = () => {
-    if (!digiParsedPreview) return;
-    const { detected, links } = digiParsedPreview;
-    
-    setProfile((current) => {
-      const next = { ...current };
-      Object.entries(detected).forEach(([field, val]) => {
-        if (val) {
-          next[field] = val;
-          if (field === 'phone') next.phone_link = val;
-        }
-      });
-      return next;
-    });
-
-    if (links && links.length > 0) {
-      setCustomLinks((current) => {
-        const existingUrls = new Set(current.map((l) => l.url?.trim().toLowerCase()));
-        const newUniqueLinks = links.filter((l) => !existingUrls.has(l.url?.trim().toLowerCase()));
-        return [...current, ...newUniqueLinks];
-      });
-    }
-
-    setDirty(true);
-    setNotice('DIGI AI filled the detected business fields and links into the form below. Review and click "Save draft" when ready.');
-    setDigiOpen(false);
-    setDigiRawInput('');
-    setDigiParsedPreview(null);
-  };
-
   const updateProduct = (index, key, value) => {
     setProducts((current) => current.map((product, productIndex) => (
       productIndex === index ? { ...product, [key]: value } : product
@@ -570,7 +549,14 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
     setError('');
     try {
       const url = await uploadImage(file, folder);
-      if (url) updateProfile(field, url);
+      if (url) {
+        updateProfile(field, url);
+        setFocalModal({
+          imageUrl: url,
+          title: field === 'profile_image_url' ? 'Adjust Profile Image Focus' : 'Adjust Site Icon Focus',
+          onSave: (finalUrl) => updateProfile(field, finalUrl),
+        });
+      }
     } catch (uploadError) {
       setError(`Image upload failed: ${uploadError.message}`);
     }
@@ -582,6 +568,11 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
       const url = await uploadImage(file, folder);
       if (url) {
         updateProduct(index, 'image_url', url);
+        setFocalModal({
+          imageUrl: url,
+          title: 'Adjust Product Image Framing',
+          onSave: (finalUrl) => updateProduct(index, 'image_url', finalUrl),
+        });
       }
     } catch (uploadError) {
       setError(`Image upload failed: ${uploadError.message}`);
@@ -608,7 +599,14 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
     setError('');
     try {
       const url = await uploadImage(file, 'payments');
-      if (url) updateCustomLink(index, 'qr_image_url', url);
+      if (url) {
+        updateCustomLink(index, 'qr_image_url', url);
+        setFocalModal({
+          imageUrl: url,
+          title: 'Adjust Payment QR Framing',
+          onSave: (finalUrl) => updateCustomLink(index, 'qr_image_url', finalUrl),
+        });
+      }
     } catch (uploadError) {
       setError(`Payment QR upload failed: ${uploadError.message}`);
     }
@@ -850,13 +848,6 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
           <p className="superadmin-section-note">Save privately while you prepare. Review the before-and-after summary before confirming any live update.</p>
         </div>
         <div className="superadmin-editor-heading-actions">
-          <button
-            className="superadmin-primary superadmin-digi-trigger-btn"
-            type="button"
-            onClick={() => setDigiOpen(true)}
-          >
-            DIGI AI Auto-Fill
-          </button>
           <button className="superadmin-secondary" type="button" onClick={onClose}>Back to sites</button>
           {site.public_url && <a className="superadmin-secondary" href={site.public_url} target="_blank" rel="noreferrer">View live card ↗</a>}
         </div>
@@ -978,21 +969,42 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
                 <div className="superadmin-editor-media" key={field}>
                   <strong>{label}</strong>
                   <div className="superadmin-editor-image-preview">
-                    {profile[field] ? <img src={profile[field]} alt={`${label} preview`} /> : <span>No image</span>}
+                    {profile[field] ? (
+                      <img
+                        src={profile[field]}
+                        alt={`${label} preview`}
+                        style={{ objectPosition: getImageFocalInfo(profile[field]).objectPosition }}
+                      />
+                    ) : <span>No image</span>}
                   </div>
-                  <label className="superadmin-secondary superadmin-upload-button">
-                    {uploading === folder ? 'Uploading…' : `Upload ${label.toLowerCase()}`}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      disabled={Boolean(uploading)}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        event.target.value = '';
-                        handleProfileImageUpload(field, folder, file);
-                      }}
-                    />
-                  </label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
+                    <label className="superadmin-secondary superadmin-upload-button" style={{ flex: 1 }}>
+                      {uploading === folder ? 'Uploading…' : `Upload ${label.toLowerCase()}`}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={Boolean(uploading)}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = '';
+                          handleProfileImageUpload(field, folder, file);
+                        }}
+                      />
+                    </label>
+                    {profile[field] && (
+                      <button
+                        type="button"
+                        className="image-framing-trigger"
+                        onClick={() => setFocalModal({
+                          imageUrl: profile[field],
+                          title: `Adjust ${label} Focus`,
+                          onSave: (finalUrl) => updateProfile(field, finalUrl),
+                        })}
+                      >
+                        Framing
+                      </button>
+                    )}
+                  </div>
                   <input
                     aria-label={`${label} URL`}
                     type="url"
@@ -1093,7 +1105,13 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
                 </div>
                 <div className="superadmin-editor-payment-layout">
                   <div className="superadmin-editor-image-preview superadmin-payment-image-preview">
-                    {link.qr_image_url ? <img src={link.qr_image_url} alt={`${link.label || 'Payment'} QR preview`} /> : <span>No QR image</span>}
+                    {link.qr_image_url ? (
+                      <img
+                        src={link.qr_image_url}
+                        alt={`${link.label || 'Payment'} QR preview`}
+                        style={{ objectPosition: getImageFocalInfo(link.qr_image_url).objectPosition }}
+                      />
+                    ) : <span>No QR image</span>}
                   </div>
                   <div className="superadmin-editor-fields">
                     <label>Payment platform
@@ -1112,19 +1130,34 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
                       </select>
                     </label>
                     <label>Button label<input maxLength={32} value={link.label || ''} onChange={(event) => updateCustomLink(index, 'label', event.target.value)} /></label>
-                    <label className="superadmin-secondary superadmin-upload-button">
-                      {uploading === 'payments' ? 'Uploading QR…' : link.qr_image_url ? 'Replace QR image' : 'Upload QR image'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        disabled={Boolean(uploading)}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          event.target.value = '';
-                          handleLinkImageUpload(index, file);
-                        }}
-                      />
-                    </label>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <label className="superadmin-secondary superadmin-upload-button" style={{ flex: 1 }}>
+                        {uploading === 'payments' ? 'Uploading QR…' : link.qr_image_url ? 'Replace QR image' : 'Upload QR image'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={Boolean(uploading)}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            event.target.value = '';
+                            handleLinkImageUpload(index, file);
+                          }}
+                        />
+                      </label>
+                      {link.qr_image_url && (
+                        <button
+                          type="button"
+                          className="image-framing-trigger"
+                          onClick={() => setFocalModal({
+                            imageUrl: link.qr_image_url,
+                            title: `Adjust ${link.label || 'Payment'} QR Framing`,
+                            onSave: (finalUrl) => updateCustomLink(index, 'qr_image_url', finalUrl),
+                          })}
+                        >
+                          Framing
+                        </button>
+                      )}
+                    </div>
                     <label className="wide">QR image URL<input type="url" value={link.qr_image_url || ''} onChange={(event) => updateCustomLink(index, 'qr_image_url', event.target.value)} /></label>
                     <label className="wide">Optional payment or checkout link<input type="url" placeholder="https://..." value={link.payment_url || ''} onChange={(event) => updateCustomLink(index, 'payment_url', event.target.value)} /></label>
                   </div>
@@ -1155,21 +1188,42 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
                         <div className="superadmin-editor-media">
                           <strong>Main product image</strong>
                           <div className="superadmin-editor-image-preview superadmin-product-image-preview">
-                            {product.image_url ? <img src={product.image_url} alt={product.alt || product.name || 'Product'} /> : <span>No image</span>}
+                            {product.image_url ? (
+                              <img
+                                src={product.image_url}
+                                alt={product.alt || product.name || 'Product'}
+                                style={{ objectPosition: getImageFocalInfo(product.image_url).objectPosition }}
+                              />
+                            ) : <span>No image</span>}
                           </div>
-                          <label className="superadmin-secondary superadmin-upload-button">
-                            {uploading === 'products' ? 'Uploading…' : 'Upload main image'}
-                            <input
-                              type="file"
-                              accept="image/*"
-                              disabled={Boolean(uploading)}
-                              onChange={(event) => {
-                                const file = event.target.files?.[0];
-                                event.target.value = '';
-                                handleProductImageUpload(index, 'products', file);
-                              }}
-                            />
-                          </label>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <label className="superadmin-secondary superadmin-upload-button" style={{ flex: 1 }}>
+                              {uploading === 'products' ? 'Uploading…' : 'Upload main image'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={Boolean(uploading)}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  event.target.value = '';
+                                  handleProductImageUpload(index, 'products', file);
+                                }}
+                              />
+                            </label>
+                            {product.image_url && (
+                              <button
+                                type="button"
+                                className="image-framing-trigger"
+                                onClick={() => setFocalModal({
+                                  imageUrl: product.image_url,
+                                  title: `Adjust ${product.name || 'Product'} Image Framing`,
+                                  onSave: (finalUrl) => updateProduct(index, 'image_url', finalUrl),
+                                })}
+                              >
+                                Framing
+                              </button>
+                            )}
+                          </div>
                           <input type="url" aria-label="Main image URL" placeholder="Or paste image URL" value={product.image_url || ''} onChange={(event) => updateProduct(index, 'image_url', event.target.value)} />
                         </div>
                         <div className="superadmin-editor-media">
@@ -1269,99 +1323,13 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
           </div>
         )}
 
-        {digiOpen && (
-          <div className="superadmin-modal-backdrop" onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setDigiOpen(false);
-          }}>
-            <section className="superadmin-login superadmin-digi-modal" aria-labelledby="digi-modal-title">
-              <div className="superadmin-digi-header">
-                <div>
-                  <p className="superadmin-eyebrow">DIGIWORLD AI</p>
-                  <h2 id="digi-modal-title">DIGI Assistant &middot; Smart Intake</h2>
-                  <p className="superadmin-muted">
-                    Paste raw text from Facebook, Instagram, WhatsApp, or an SMS bio. DIGI will extract the details and place them into the correct card input boxes.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="superadmin-secondary"
-                  onClick={() => setDigiOpen(false)}
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="superadmin-digi-body">
-                <label className="superadmin-digi-input-label">
-                  Paste raw text here:
-                  <textarea
-                    rows={8}
-                    className="superadmin-digi-textarea"
-                    placeholder="Paste FB About info, bio, or contact message..."
-                    value={digiRawInput}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setDigiRawInput(val);
-                      if (val.trim()) {
-                        setDigiParsedPreview(parseClientRawData(val));
-                      } else {
-                        setDigiParsedPreview(null);
-                      }
-                    }}
-                  />
-                </label>
-
-                {digiParsedPreview && (
-                  <div className="superadmin-digi-preview">
-                    <h4>DIGI Extracted Fields:</h4>
-                    <div className="superadmin-digi-preview-grid">
-                      {Object.entries(digiParsedPreview.detected).map(([key, val]) => (
-                        <div key={key} className="superadmin-digi-preview-item">
-                          <small>{key.toUpperCase()}</small>
-                          <strong>{String(val)}</strong>
-                        </div>
-                      ))}
-                    </div>
-
-                    {digiParsedPreview.links?.length > 0 && (
-                      <div className="superadmin-digi-preview-links">
-                        <h4>Detected Links ({digiParsedPreview.links.length}):</h4>
-                        <ul>
-                          {digiParsedPreview.links.map((link, i) => (
-                            <li key={i}>
-                              <span>{link.title}:</span> <code>{link.url}</code>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="superadmin-digi-actions">
-                <button
-                  type="button"
-                  className="superadmin-secondary"
-                  onClick={() => {
-                    setDigiRawInput('');
-                    setDigiParsedPreview(null);
-                  }}
-                  disabled={!digiRawInput}
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  className="superadmin-primary"
-                  onClick={handleDigiApply}
-                  disabled={!digiParsedPreview || Object.keys(digiParsedPreview.detected).length === 0}
-                >
-                  Apply to Form Fields
-                </button>
-              </div>
-            </section>
-          </div>
+        {focalModal && (
+          <ImageFocalModal
+            imageUrl={focalModal.imageUrl}
+            title={focalModal.title}
+            onSave={focalModal.onSave}
+            onClose={() => setFocalModal(null)}
+          />
         )}
         </>
       )}

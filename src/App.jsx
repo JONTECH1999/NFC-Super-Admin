@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { profilesTable, productsTable, siteId, supabase, supabaseUrl } from "./lib/supabase";
 import { applyFavicon, applySiteTitle } from "./lib/siteSettings";
+import { getImageFocalInfo } from "./lib/imageFocalPoint";
 
 /* ── Fallback data (used until Supabase loads) ── */
 const fallbackProfile = {
@@ -550,6 +551,7 @@ function ProductShop({ profile, products: initialProducts }) {
                     src={product.image_url}
                     alt={product.alt || product.name}
                     loading="lazy"
+                    style={{ objectPosition: getImageFocalInfo(product.image_url).objectPosition }}
                   />
                 </div>
                 <div className="shop-product-details">
@@ -1732,6 +1734,7 @@ function App() {
                     <img
                       src={profile.profile_image_url}
                       alt=""
+                      style={{ objectPosition: getImageFocalInfo(profile.profile_image_url).objectPosition }}
                       onLoad={() =>
                         setProfileImageLoadedUrl(profile.profile_image_url)
                       }
@@ -1851,6 +1854,7 @@ function App() {
                   className="profile-photo"
                   src={profile.profile_image_url}
                   alt={`Portrait of ${profile.name}`}
+                  style={{ objectPosition: getImageFocalInfo(profile.profile_image_url).objectPosition }}
                   onLoad={() =>
                     setProfileImageLoadedUrl(profile.profile_image_url)
                   }
@@ -2063,6 +2067,7 @@ function App() {
                       <img
                         className="product-image"
                         src={product.image_url}
+                        style={{ objectPosition: getImageFocalInfo(product.image_url).objectPosition }}
                         alt={product.alt || product.name}
                         loading="lazy"
                       />
@@ -2303,7 +2308,7 @@ function App() {
             <h2 id="payment-qr-title">Pay with {activePayment.label}</h2>
             <p>Scan this QR code with your payment app.</p>
             <div className="payment-qr-image-frame">
-              <img src={activePayment.qrImageUrl} alt={`${activePayment.label} payment QR code`} />
+              <img src={activePayment.qrImageUrl} alt={`${activePayment.label} payment QR code`} style={{ objectPosition: getImageFocalInfo(activePayment.qrImageUrl).objectPosition }} />
             </div>
             {activePayment.paymentUrl && (
               <a
