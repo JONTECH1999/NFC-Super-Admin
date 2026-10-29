@@ -461,6 +461,7 @@ function ProductShop({ profile, products: initialProducts }) {
               <img
                 src={selectedProduct.image_url}
                 alt={selectedProduct.alt || selectedProduct.name}
+                style={{ objectPosition: getImageFocalInfo(selectedProduct.image_url).objectPosition }}
               />
             </div>
             <div className="shop-product-full-content">

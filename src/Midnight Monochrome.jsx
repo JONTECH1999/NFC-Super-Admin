@@ -380,6 +380,7 @@ function Digipen() {
                 <img
                   src={profile.profile_image_url}
                   alt={profile.name || profile.business || "Profile"}
+                  style={{ objectPosition: getImageFocalInfo(profile.profile_image_url).objectPosition }}
                   onLoad={() => setProfileImageLoadedUrl(profile.profile_image_url)}
                   onError={() => setFailedProfileImageUrl(profile.profile_image_url)}
                 />
