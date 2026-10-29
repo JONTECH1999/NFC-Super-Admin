@@ -1996,6 +1996,7 @@ function App() {
                       src={featuredProducts[0].image_url}
                       alt={featuredProducts[0]?.alt || "Featured work"}
                       loading="lazy"
+                      style={{ objectPosition: getImageFocalInfo(featuredProducts[0].image_url).objectPosition }}
                     />
                     <span>
                       {profile.business || "Featured work"}
