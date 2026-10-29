@@ -1634,8 +1634,35 @@ function ProductsTab({ showToast, submitEditRequest, draftKey, requiresPublicati
                 <div className="admin-gallery-grid">
                   {productForm.gallery.map((url, i) => (
                     <div className="admin-gallery-item" key={i}>
-                      <img src={url} alt={'Gallery ' + (i + 1)} />
-                      <button className="admin-gallery-remove" type="button" onClick={() => removeGalleryImage(i)} title="Remove">✕</button>
+                      <img
+                        src={url}
+                        alt={'Gallery ' + (i + 1)}
+                        style={{ objectPosition: getImageFocalInfo(url).objectPosition }}
+                      />
+                      <button
+                        className="admin-gallery-remove"
+                        type="button"
+                        onClick={() => removeGalleryImage(i)}
+                        title="Remove"
+                      >
+                        ✕
+                      </button>
+                      <button
+                        type="button"
+                        className="image-framing-trigger"
+                        style={{ marginTop: 4, width: '100%', fontSize: '0.7rem', padding: '2px 4px' }}
+                        onClick={() => setFocalModal({
+                          imageUrl: url,
+                          title: `Adjust Gallery Photo ${i + 1} Framing`,
+                          onSave: (finalUrl) => {
+                            const updated = [...(productForm.gallery || [])];
+                            updated[i] = finalUrl;
+                            handleFormChange('gallery', updated);
+                          },
+                        })}
+                      >
+                        Framing
+                      </button>
                     </div>
                   ))}
                 </div>

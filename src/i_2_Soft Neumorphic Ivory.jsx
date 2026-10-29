@@ -1386,7 +1386,7 @@ function SoftNeumorphicIvory() {
                             onClick={() => openLightbox(dialog.product.image_url ? index + 1 : index)}
                             title="Click to zoom image"
                           >
-                            <img src={image} alt={`${dialog.product.name} photo ${index + 1}`} loading="lazy" />
+                            <img src={image} alt={`${dialog.product.name} photo ${index + 1}`} loading="lazy" style={{ objectPosition: getImageFocalInfo(image).objectPosition }} />
                           </div>
                         ))}
                       </div>

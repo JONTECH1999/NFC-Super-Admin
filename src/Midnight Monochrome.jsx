@@ -604,14 +604,14 @@ function Digipen() {
                   <p className="digipen-section-kicker">{profile.business || "Featured work"}</p>
                   <h2 id="digipen-dialog-title">{dialog.product.name}</h2>
                   {dialog.product.image_url && (
-                    <img className="digipen-product-image" src={dialog.product.image_url} alt={dialog.product.alt || dialog.product.name} />
+                    <img className="digipen-product-image" src={dialog.product.image_url} alt={dialog.product.alt || dialog.product.name} style={{ objectPosition: getImageFocalInfo(dialog.product.image_url).objectPosition }} />
                   )}
                   {dialog.product.price && <p className="digipen-product-price">{dialog.product.price}</p>}
                   <p>{dialog.product.description || "Contact us to learn more about this service."}</p>
                   {Array.isArray(dialog.product.gallery) && dialog.product.gallery.length > 0 && (
                     <div className="digipen-gallery">
                       {dialog.product.gallery.map((image, index) => (
-                        <img key={`${image}-${index}`} src={image} alt={`${dialog.product.name} gallery ${index + 1}`} loading="lazy" />
+                        <img key={`${image}-${index}`} src={image} alt={`${dialog.product.name} gallery ${index + 1}`} loading="lazy" style={{ objectPosition: getImageFocalInfo(image).objectPosition }} />
                       ))}
                     </div>
                   )}

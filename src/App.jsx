@@ -228,7 +228,7 @@ function ProjectDetailModal({ project, profile, onClose, onOpenLightbox }) {
             onClick={() => onOpenLightbox(0)}
             title="Click to view full image"
           >
-            <img src={project.image_url} alt={project.alt || project.name} />
+            <img src={project.image_url} alt={project.alt || project.name} style={{ objectPosition: getImageFocalInfo(project.image_url).objectPosition }} />
             <span className="project-modal-zoom-hint">
               <i className="fa-solid fa-expand" aria-hidden="true" /> Zoom
             </span>
@@ -261,7 +261,7 @@ function ProjectDetailModal({ project, profile, onClose, onOpenLightbox }) {
                     onClick={() => onOpenLightbox(project.image_url ? idx + 1 : idx)}
                     title="Click to view photo"
                   >
-                    <img src={imgUrl} alt={`${project.name} photo ${idx + 1}`} loading="lazy" />
+                    <img src={imgUrl} alt={`${project.name} photo ${idx + 1}`} loading="lazy" style={{ objectPosition: getImageFocalInfo(imgUrl).objectPosition }} />
                   </div>
                 ))}
               </div>
@@ -507,8 +507,9 @@ function ProductShop({ profile, products: initialProducts }) {
                   >
                     <img
                       src={url}
-                      alt={`${selectedProduct.name}, photo ${i + 1}`}
-                      loading="lazy"
+                        alt={`${selectedProduct.name}, photo ${i + 1}`}
+                        loading="lazy"
+                        style={{ objectPosition: getImageFocalInfo(url).objectPosition }}
                     />
                   </div>
                 ))}

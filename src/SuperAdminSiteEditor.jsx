@@ -1231,8 +1231,36 @@ function SuperAdminSiteEditor({ site, invoke, onClose, onChanged }) {
                           <div className="superadmin-editor-gallery">
                             {(product.gallery || []).map((url, imageIndex) => (
                               <div className="superadmin-editor-gallery-item" key={`${url}-${imageIndex}`}>
-                                <img src={url} alt={`${product.name || 'Product'} gallery ${imageIndex + 1}`} />
-                                <button type="button" className="superadmin-danger" onClick={() => updateProduct(index, 'gallery', product.gallery.filter((_image, itemIndex) => itemIndex !== imageIndex))}>Remove</button>
+                                <img
+                                  src={url}
+                                  alt={`${product.name || 'Product'} gallery ${imageIndex + 1}`}
+                                  style={{ objectPosition: getImageFocalInfo(url).objectPosition }}
+                                />
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                  <button
+                                    type="button"
+                                    className="superadmin-secondary"
+                                    style={{ minHeight: 26, padding: '0 4px', fontSize: '0.64rem', flex: 1 }}
+                                    onClick={() => setFocalModal({
+                                      imageUrl: url,
+                                      title: `Adjust Gallery Image ${imageIndex + 1} Framing`,
+                                      onSave: (finalUrl) => {
+                                        const updatedGallery = [...(product.gallery || [])];
+                                        updatedGallery[imageIndex] = finalUrl;
+                                        updateProduct(index, 'gallery', updatedGallery);
+                                      },
+                                    })}
+                                  >
+                                    Focus
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="superadmin-danger"
+                                    onClick={() => updateProduct(index, 'gallery', product.gallery.filter((_image, itemIndex) => itemIndex !== imageIndex))}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
                               </div>
                             ))}
                             {product.gallery?.length === 0 && <span className="superadmin-muted">No gallery images</span>}
